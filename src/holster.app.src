@@ -1,0 +1,13 @@
+{application, holster,
+ [
+  {description, "Holster applicaiton"},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  gun
+                 ]},
+  {mod, { holster_app, []}},
+  {env, []}
+ ]}.
