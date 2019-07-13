@@ -50,11 +50,12 @@ loop(ConnPid, Timeout, StreamRef) ->
         {client_request, NewUri} ->
             NewStreamRef = gun:get(ConnPid, NewUri),
             loop(ConnPid, Timeout, NewStreamRef);
-        {gun_up, _ServerPid, _Proto} ->
+        {gun_up, ServerPid, Proto} ->
+            error_logger:error_msg("Gun up ~p ~p\n", [ServerPid, Proto]),
             loop(ConnPid, Timeout, StreamRef);
-        {gun_down, _ServerPid, _Proto, _Reason ,_ , _} ->
-            ok = error_logger:error_msg("Connection Down!"),
-            loop(ConnPid, Timeout, StreamRef);
+        {gun_down, _ServerPid, _Proto, Reason, _ , _} ->
+            ok = error_logger:error_msg("Connection Down! ~p\n", [Reason]),
+            do_close(ConnPid, StreamRef);
         {gun_response, ConnPid, StreamRef, fin, Status, Headers} ->
             error_logger:info_msg(
                 "fin - Response Headers ~p\nStatus ~p",
@@ -68,21 +69,21 @@ loop(ConnPid, Timeout, StreamRef) ->
             ),
             receive_data(ConnPid, StreamRef, Timeout),
             loop(ConnPid, Timeout, StreamRef);
-        {'DOWN', _MRef, process, ConnPid, Reason} ->
-            error_logger:error_msg("Connection Down!"),
-            exit(Reason);
         {'DOWN', _Mref, process, ConnPid, Reason} ->
             ok = error_logger:error_msg("Connection Down!"),
             exit(Reason);
         close ->
-            ok = error_logger:error_msg("Connection Closed!"),
-            ok = gun:cancel(ConnPid, StreamRef),
-            ok = gun:close(ConnPid),
+            ok = error_logger:error_msg("Connection Closed! 'close' msg"),
+            do_close(ConnPid, StreamRef),
             exit(close);
         UnhandledMsg ->
             io:format("Received UnhandledMsg ~p\n\n", [UnhandledMsg]),
             loop(ConnPid, Timeout, StreamRef)
 end.
+
+do_close(ConnPid, StreamRef) ->
+    ok = gun:cancel(ConnPid, StreamRef),
+    ok = gun:close(ConnPid).
 
 receive_data(ConnPid, StreamRef, Timeout) ->
     receive
