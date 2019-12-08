@@ -106,7 +106,7 @@ open(enter, open = PrevState, #{
 open({call, From}, {req, URI, ReqType}, Data) ->
     %% NB! postpone until connected
     ?LOG_DEBUG("~p({call, ~p}, ~p, POSTPONE!", [?FUNCTION_NAME, From, {req, URI, ReqType}]),
-    {keep_state, Data, [postpone]};
+    {keep_state, Data#{ client_from => From }, [postpone]};
 % open(cast, Msg, Data) ->
 %     ?LOG_INFO("~p(cast, ~p, ", [?FUNCTION_NAME, Msg]),
 %     {next_state, open, Data};
@@ -124,7 +124,16 @@ open(info, {gun_up, ConnPid, Scheme}, #{
     {next_state, connected, Data#{
         conn_pid => ConnPid,
         scheme => Scheme
-    }}.
+    }};
+open(info, {'DOWN', MRef, process, ConnPid, Reason}, #{
+        conn_m_ref := MRef,
+        client_from := From } = Data) ->
+    case From of
+        undefined ->
+            {stop, normal, Data#{ stop_reason => {'DOWN', ConnPid}}};
+        _ ->
+            {stop_and_reply, normal, [{reply, From, {response, Reason}}]}
+    end.
 % open(info, Msg, Data) ->
 %     ?LOG_INFO("~p(info, ~p, ", [?FUNCTION_NAME, Msg]),
 %     {next_state, open, Data}.
@@ -300,7 +309,12 @@ in_request(info, {gun_data, ConnPid, StreamRef, nofin, ResponseData}, #{
 % in_request(info, _Msg, State) ->
 %     {next_state, in_request, State}.
 
-terminate(_Reason, _StateName, _State) ->
+terminate(_Reason, _StateName, #{
+        conn_pid := _ConnPid,
+        stream_ref := _StreamRef,
+        client_from := _From } = _Data) ->
+
+    %% TODO: should we cleanup ? is it not done elsewhere ?
 
     %% TODO: cancel andor shutdown/close connection
 
