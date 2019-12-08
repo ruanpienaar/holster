@@ -1,6 +1,6 @@
 {application, holster,
  [
-  {description, "Holster applicaiton"},
+  {description, "erlang gun http client wrapper function"},
   {vsn, "1"},
   {registered, []},
   {applications, [
