@@ -12,7 +12,8 @@
     req/3,
     req/4,
     req/6,
-    req/7
+    req/7,
+    close_req/1
 ]).
 
 % -export([
@@ -122,105 +123,5 @@ req(Host, URI, Proto, Port, OptsMap, Timeout, long_running = ConnType) ->
     erlang:monitor(process, Pid),
     {{ok, Pid}, holster_sm:req(Pid, URI)}.
 
-
-
-
-
-
-
-% test() ->
-
-%     {ok, _} = application:ensure_all_started(holster),
-
-%     {ok, _} = dbg:tracer(),
-%     {ok, _} = dbg:p(all, call),
-%     % {ok, _} = dbg:tpl(holster_sm, open, cx),
-%     % {ok, _} = dbg:tpl(holster_sm, connected, cx),
-%     % {ok, _} = dbg:tpl(holster_sm, in_request, cx),
-
-%     % {ok, _} = dbg:tpl(gun_tcp, cx),
-%     % {ok, _} = dbg:tpl(gun, cx),
-
-%     timer:sleep(100),
-
-%     % {ok, Pid} =
-%     %     holster_sm:start_link(
-%     %         "localhost",
-%     %          http,
-%     %          54321,
-%     %          #{
-%     %             retry => 1,
-%     %             retry_timeout => 60000,
-%     %             http_opts => #{
-%     %                 closing_timeout => 60000,
-%     %                 keepalive => 60000
-%     %             }
-%     %          },
-%     %          60000,
-%     %          long_running
-%     %          % once_off
-%     %     ),
-
-
-%     holster:long_running_req(
-%         "http://localhost:54321",
-%         #{
-%             retry => 10000,
-%             retry_timeout => 0,
-%             domain_lookup_timeout => 250,
-%             connect_timeout => 250,
-%             http_opts => #{
-%                 closing_timeout => 250
-%             }
-%         }).
-
-%     % timer:apply_interval(1000, holster_sm, req, [Pid, "/docs/en/gun/2.0/guide/http/"]).
-
-%     % holster_sm:req(Pid, "/docs/en/gun/2.0/guide/http/"),
-%     % holster_sm:req(Pid, "/"),
-
-
-
-% once_off_test() ->
-%     {ok, _} = application:ensure_all_started(holster),
-%     % {ok, _} = dbg:tracer(),
-%     % {ok, _} = dbg:p(all, call),
-%     % {ok, _} = dbg:tpl(gun, cx),
-%     run_x_times(10, 10, 0, fun() -> do_once_off_test() end).
-
-% long_running_test() ->
-%     {ok, _} = application:ensure_all_started(holster),
-%     % {ok, _} = dbg:tracer(),
-%     % {ok, _} = dbg:p(all, call),
-%     % {ok, _} = dbg:tpl(gun, cx),
-%     % run_x_times(10, 10, 0, fun() -> do_long_running_test() end).
-%     [ spawn(
-%         fun() ->
-%             do_long_running_test()
-%         end
-%     ) || _ <- lists:seq(1, 10) ].
-
-% run_x_times(0, X, Total, _F) ->
-%     Total / X;
-% run_x_times(X, Y, Total, F) ->
-%     {MicroS, _} = timer:tc(F),
-%     run_x_times(X-1, Y, Total+MicroS, F).
-
-% do_once_off_test() ->
-%     lists:foreach(fun(_) ->
-%         % timer:sleep(5),
-%         %% Create 404 requests
-%         R = once_off_req("http://localhost:54321/api"),
-%         % ?LOG_WARNING("once_off RESPONSE ~p\n", [R])
-%         ok
-%     end, lists:seq(1, 10000)).
-
-% do_long_running_test() ->
-%     {{ok, Pid}, _} = long_running_req("http://localhost:54321"),
-%     lists:foreach(fun(_) ->
-%         % timer:sleep(5),
-%         %% Create 404 requests
-%         R = long_running_req("http://localhost:54321/api", Pid),
-%         % ?LOG_WARNING("long_running RESPONSE ~p\n", [R])
-%         ok
-%     end, lists:seq(1, 10000)).
+close_req(Pid) ->
+    holster_sm:close(Pid).
