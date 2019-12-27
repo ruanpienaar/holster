@@ -1,24 +1,48 @@
 # holster
 A holster for [Gun](https://github.com/ninenines/gun)
 
-[Gun User Guide](https://ninenines.eu/docs/en/gun/1.3/guide/)
-
 ## Quickstart
 
 ```
 $ make
-$ rebar3 shell
+$ ./start-dev.sh
+erl> {ok, _} = application:ensure_all_started(holster).
 ```
 
-## Example:
+## Example requests:
 
-First request:
+You can either have a once-off request, or a long-running request.
+a once-off request connects to the given host, makes the call, and tears
+down the connection, whereas a long-running connection will keep the
+connection open for consecutive requests made.
+
+### Once off:
 ```Erlang
-{ok, Host, URI, Proto, Port, OptsMap, Timeout, Pid} = holster:req("www.erlang.org", "/").
+holster:once_off_req(Url :: string()) =
+  {response, Resonse :: {resp_code() :: non_neg_integer(), 
+                         resp_headers() :: proplists:proplist(),
+                         response() :: binary()} | 
+  {response, ErrResponse :: term()}
 ```
 
-Consequent requests:
+### Long running:
 ```Erlang
-holster:req(Host, "/news", Proto, Port, OptsMap, Timeout, Pid).
-holster:req(Host, "/downloads", Proto, Port, OptsMap, Timeout, Pid).
+holster:long_running_req(Url :: string()) =
+  {
+     {ok, pid()}, {response, Resonse :: {resp_code() :: non_neg_integer(), 
+                         resp_headers() :: proplists:proplist(),
+                         response() :: binary()}}
+     {
+                  {response, ErrResponse :: term()}
+  }
+
+holster:long_running_req(Url :: string(), PidOrOpts :: pid() | gun:opts()) =
+  {response, Resonse :: {resp_code() :: non_neg_integer(), 
+                         resp_headers() :: proplists:proplist(),
+                         response() :: binary()} | 
+  {response, ErrResponse :: term()}
 ```
+
+
+TODO: reply with pid on long_running_req/2 when Opts passed in, or just both
+cases.
