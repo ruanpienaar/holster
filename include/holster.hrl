@@ -1,23 +1,21 @@
--define(DEBUG(Msg),lager:debug(Msg)).
--define(DEBUG(Msg, Args),lager:debug(Msg, Args)).
-
--define(INFO(Msg),lager:info(Msg)).
--define(INFO(Msg, Args),lager:info(Msg, Args)).
-
--define(NOTICE(Msg),lager:notice(Msg)).
--define(NOTICE(Msg, Args),lager:notice(Msg, Args)).
-
--define(WARNING(Msg),lager:warning(Msg)).
--define(WARNING(Msg, Args),lager:warning(Msg, Args)).
-
--define(ERROR(Msg),lager:error(Msg)).
--define(ERROR(Msg, Args),lager:error(Msg, Args)).
-
--define(CRITICAL(Msg),lager:critical(Msg)).
--define(CRITICAL(Msg, Args),lager:critical(Msg, Args)).
-
--define(ALERT(Msg),lager:alert(Msg)).
--define(ALERT(Msg, Args),lager:alert(Msg, Args)).
-
--define(EMERGENCY(Msg),lager:emergency(Msg)).
--define(EMERGENCY(Msg, Args),lager:emergency(Msg, Args)).
+%% Association :: Type := Type  %% denotes a mandatory association
+%%              | Type => Type  %% denotes an optional association
+-type holster_sm_state() :: #{
+    scheme := undefined | http | https,
+    host := string()
+    % req_uri => undefined,
+    % req_type => undefined, %% get | post
+    % proto => Proto,
+    % port => Port,
+    % opts_map => OptsMap,
+    % timeout => Timeout,
+    % conn_type => ConnType,
+    % conn_pid => undefined,
+    % stream_ref => undefined,
+    % client_from => undefined,
+    % response_status => undefined,
+    % response_headers => undefined,
+    % response_data => <<>>,
+    % conn_m_ref => undefined,
+    % stop_reason => undefined
+}.

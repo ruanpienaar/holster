@@ -1,6 +1,7 @@
 -module(holster_sm).
 
 -include_lib("kernel/include/logger.hrl").
+-include("holster.hrl").
 
 %% API
 -export([
@@ -24,8 +25,11 @@
     in_request/3
 ]).
 
+
 %% ============================================================================
 
+%% TODO:
+%% scheme - handle and check that once connected it matches up.
 
 % -spec start_link() ->
 %             {ok, Pid :: pid()} |
@@ -144,12 +148,9 @@ open(info, {'DOWN', MRef, process, ConnPid, Reason}, #{
 
 connected(enter, PrevState, #{
         conn_pid := ConnPid,
-        scheme := Scheme
-        } = _Data) when (ConnPid =/= undefined andalso
-                        Scheme =/= undefined)
-                       andalso
-                       (PrevState =/= open orelse
-                        PrevState =/= in_request) ->
+        scheme := Scheme } = _Data)
+        when (ConnPid =/= undefined andalso Scheme =/= undefined) andalso
+             (PrevState =/= open orelse PrevState =/= in_request) ->
     ?LOG_DEBUG("~p -> ENTER PrevState ~p", [?FUNCTION_NAME, PrevState]),
     keep_state_and_data;
 % Once Off call
@@ -238,7 +239,6 @@ in_request(enter, connected = PrevState, #{
 %     {next_state, in_request, State, [{reply, From, ok}]};
 % in_request(cast, _Msg, State) ->
 %     {next_state, in_request, State};
-
 in_request(info, {gun_down, ConnPid, _Scheme, Reason, _}, #{
         conn_pid := ConnPid,
         stream_ref := StreamRef,
@@ -269,7 +269,7 @@ in_request(info, {gun_response, ConnPid, _StreamRef, fin, Status, RespHeaders}, 
     %% TODO: should we re-set StreamRef or check it ??
     ?LOG_DEBUG("~p -> gun_response ~p Type ~p", [?FUNCTION_NAME, fin, once_off]),
     %% response likely non 200 or error
-    ReqResp = {Status, RespHeaders, _Data = <<>>},
+    ReqResp = {Status, RespHeaders, _ResponseData = <<>>},
     ok = gun:shutdown(ConnPid),
     ?LOG_DEBUG("stop once_off request", []),
     {stop_and_reply, normal, [{reply, From, {response, ReqResp}}]};
