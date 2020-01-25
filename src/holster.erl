@@ -38,6 +38,9 @@
 
 -export([
     simple_proc_req/2,
+    simple_proc_req/3,
+    simple_proc_req/4,
+    simple_proc_req/5,
     req/2,
     req/3,
     req/4,
@@ -66,12 +69,19 @@
 %% - Userinfo not done/tested yet. user:passwd@host.com
 
 simple_proc_req(ReqType, URI) ->
-    ConnectOpts = #{},
-    Timeout = 120000,
+    simple_proc_req(ReqType, URI, #{}, [], 120000).
+
+simple_proc_req(ReqType, URI, ConnectOpts) ->
+    simple_proc_req(ReqType, URI, ConnectOpts, [], 120000).
+
+simple_proc_req(ReqType, URI, ConnectOpts, Headers) ->
+    simple_proc_req(ReqType, URI, ConnectOpts, Headers, 120000).
+
+simple_proc_req(ReqType, URI, ConnectOpts, Headers, Timeout) ->
     {ok, {Scheme, _UserInfo, Host, Port, Path, Query, Fragment}} = parse_uri(URI),
     {ok, Pid} = holster_request:start_link(Host, Scheme, Port, ConnectOpts, Timeout),
     _ = holster_request:req(
-        Pid, ReqType, combine_fragment({Path, Query, Fragment}), [], #{}, Timeout),
+        Pid, ReqType, combine_fragment({Path, Query, Fragment}), Headers, ConnectOpts, Timeout),
     receive
         A ->
             {response, A}
@@ -191,7 +201,7 @@ scheme_validation(_) ->
 combine_fragment({Path, Query, Fragment}) ->
     Path ++ Query ++ Fragment.
 
-req_response_only(R={response, Response}) ->
+req_response_only(R={response, _}) ->
     R;
 req_response_only({_, Response}) ->
     Response.
