@@ -1,29 +1,12 @@
 -module(holster).
 
--include_lib("kernel/include/logger.hrl").
-
--export([
-    once_off_req/1,
-    once_off_req/2,
-    long_running_req/1,
-    long_running_req/2,
-    req/1,
-    req/2,
-    req/3,
-    req/4,
-    req/6,
-    req/7,
-    close_req/1
-]).
-
-% -export([
-%     test/0,
-%     once_off_test/0,
-%     long_running_test/0
-% ]).
-
-%% @doc Simply use a URL to send a request with the ussual defaults.
-%%      The following are two example URIs and their component parts:
+%% @doc
+%% req/1/2/3/4 makes the request the process is cleaned up,
+%% compared to stay_connected/1/2/3/4 that keeps the connection up for further requests
+%%
+%%  URI:
+%%
+%%  The following are two example URIs and their component parts:
 %%  ( Copied from inets-7.0.7 http_uri.erl )
 %%
 %%          foo://example.com:8042/over/there?name=ferret#nose
@@ -40,88 +23,178 @@
 %% URI ( query string and/or path )
 %%     https://tools.ietf.org/html/rfc3986
 %% Fragment: https://tools.ietf.org/html/rfc3986
-%%
-%% 11> http_uri:parse("http://localhost:8080?q=abc").
-%% {ok,{http,[],"localhost",8080,"/","?q=abc"}}
-%%
-%% 12> http_uri:parse("https://localhost:8080/page/1?q=abc").
-%% {ok,{https,[],"localhost",8080,"/page/1","?q=abc"}}
-%%
-%% 13> http_uri:parse("https://user:password@localhost:8080/page/1?q=abc").
-%% {ok,{https,"user:password","localhost",8080,"/page/1","?q=abc"}}
-%%
+%% NB: Fragments are included
 %% @end
 
-%% TODO: Userinfo not done/tested yet.
-%% user:passwd@host.com
+-include_lib("kernel/include/logger.hrl").
 
--spec once_off_req(http_uri:uri()) -> {response, term()}.
-once_off_req(Url) ->
-    once_off_req(Url, #{}).
+-type req_type() :: get | head | options | patch | post | put.
+-type conn_type() :: once | stay_connected.
 
--spec once_off_req(http_uri:uri(), gun:opts()) -> {response, term()}.
-once_off_req(Url, Opts) ->
-    do_req(Url, Opts, 1000, once_off).
+-export_type([
+    req_type/0,
+    conn_type/0
+]).
 
--spec long_running_req(http_uri:uri()) -> {{ok, pid()}, {response, term()}}.
-long_running_req(Url) ->
-    long_running_req(Url, #{}).
+-export([
+    simple_proc_req/2,
+    req/2,
+    req/3,
+    req/4,
+    req/5,
+    stay_connected_req/2,
+    stay_connected_req/3,
+    stay_connected_req/4,
+    stay_connected_req/5,
+    another_request/3,
+    another_request/4,
+    another_request/5,
+    close_req/1
+]).
 
--spec long_running_req(http_uri:uri(), gun:opts() | pid()) -> {{ok, pid()}, {response, term()}}.
-long_running_req(Url, Opts) when is_map(Opts) ->
-    do_req(Url, Opts, 1000, long_running);
-long_running_req(Url, Pid) when is_pid(Pid) ->
-    do_req(Url, #{}, 1000, long_running, Pid).
+-export([
+    parse_uri/1
+]).
 
-do_req(Url, OptsMap, Timeout, ConnType) ->
-    do_req(Url, OptsMap, Timeout, ConnType, undefined).
+% -export([
+%     test/0,
+%     once_test/0,
+%     stay_connected/0
+% ]).
 
-do_req(Url, OptsMap, Timeout, ConnType, undefined) ->
-    case http_uri:parse(Url) of
-        {ok, {Scheme, _UserInfo, Host, Port, Path, Query}} ->
-            req(Host, Path ++ Query, Scheme, Port, OptsMap, Timeout, ConnType);
-        {ok, {Scheme, _UserInfo, Host, Port, Path, Query, _Fragment}} ->
-            req(Host, Path ++ Query, Scheme, Port, OptsMap, Timeout, ConnType);
-        {error, Reason} ->
-            {error, Reason}
-    end;
-do_req(Url, _OptsMap, _Timeout, _ConnType, Pid) ->
-    case http_uri:parse(Url) of
-        {ok, {_Scheme, _UserInfo, _Host, _Port, Path, Query}} ->
-            holster_sm:req(Pid, Path ++ Query);
-        {ok, {_Scheme, _UserInfo, _Host, _Port, Path, Query, _Fragment}} ->
-            holster_sm:req(Pid, Path ++ Query);
+%% TODO:
+%% - Userinfo not done/tested yet. user:passwd@host.com
+
+simple_proc_req(ReqType, URI) ->
+    ConnectOpts = #{},
+    Timeout = 120000,
+    {ok, {Scheme, _UserInfo, Host, Port, Path, Query, Fragment}} = parse_uri(URI),
+    {ok, Pid} = holster_request:start_link(Host, Scheme, Port, ConnectOpts, Timeout),
+    _ = holster_request:req(
+        Pid, ReqType, combine_fragment({Path, Query, Fragment}), [], #{}, Timeout),
+    receive
+        A ->
+            {response, A}
+    end.
+
+-spec req(req_type(), http_uri:uri())
+        -> {response, term()}.
+req(ReqType, URI) ->
+    req_response_only(
+        do_req(ReqType, URI, #{}, [], #{}, once)
+    ).
+
+-spec req(req_type(), http_uri:uri(), gun:opts())
+        -> {response, term()}.
+req(ReqType, URI, ConnectOpts) ->
+    req_response_only(
+        do_req(ReqType, URI, ConnectOpts, [], #{}, once)
+    ).
+
+-spec req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers())
+        -> {response, term()}.
+req(ReqType, URI, ConnectOpts, Headers) ->
+    req_response_only(
+        do_req(ReqType, URI, ConnectOpts, Headers, #{}, once)
+    ).
+
+-spec req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers(), gun:req_opts())
+        -> {response, term()}.
+req(ReqType, URI, ConnectOpts, Headers, ReqOpts) ->
+    req_response_only(
+        do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, once)
+    ).
+
+-spec stay_connected_req(req_type(), http_uri:uri())
+        -> {{ok, pid()}, {response, term()}}.
+stay_connected_req(ReqType, URI) ->
+    do_req(ReqType, URI, #{}, [], #{}, stay_connected).
+
+-spec stay_connected_req(req_type(), http_uri:uri(), gun:opts())
+        -> {{ok, pid()}, {response, term()}}.
+stay_connected_req(ReqType, URI, ConnectOpts) ->
+    do_req(ReqType, URI, ConnectOpts, [], #{}, stay_connected).
+
+-spec stay_connected_req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers())
+        -> {{ok, pid()}, {response, term()}}.
+stay_connected_req(ReqType, URI, ConnectOpts, Headers) ->
+    do_req(ReqType, URI, ConnectOpts, Headers, #{}, stay_connected).
+
+-spec stay_connected_req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers(), gun:req_opts())
+        -> {{ok, pid()}, {response, term()}}.
+stay_connected_req(ReqType, URI, ConnectOpts, Headers, ReqOpts) ->
+    do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, stay_connected).
+
+-spec another_request(req_type(), http_uri:uri(), pid())
+        -> {{ok, pid()}, {response, term()}}.
+another_request(ReqType, URI, Pid) ->
+    do_req(ReqType, URI, #{}, [], #{}, stay_connected, Pid).
+
+-spec another_request(req_type(), http_uri:uri(), gun:req_headers(), pid())
+        -> {{ok, pid()}, {response, term()}}.
+another_request(ReqType, URI, Headers, Pid) ->
+    do_req(ReqType, URI, #{}, Headers, #{}, stay_connected, Pid).
+
+-spec another_request(req_type(), http_uri:uri(), gun:req_headers(), gun:req_opts(), pid())
+        -> {{ok, pid()}, {response, term()}}.
+another_request(ReqType, URI, Headers, ReqOpts, Pid) ->
+    do_req(ReqType, URI, #{}, Headers, ReqOpts, stay_connected, Pid).
+
+-spec do_req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers(), gun:req_opts(), conn_type())
+        -> {response, term()}.
+do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType) ->
+    do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, undefined).
+
+-spec do_req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers(), gun:req_opts(), conn_type(), undefined | pid())
+        -> {response, term()}.
+do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, PidOrUndef) ->
+    case parse_uri(URI) of
+        {ok, {Scheme, _UserInfo, Host, Port, Path, Query, Fragment}} ->
+            {ok, Pid} = start_or_use(PidOrUndef, Host, Scheme, Port, ConnectOpts, undefined, ConnType),
+            {
+                {ok, Pid},
+                holster_sm:req(Pid, ReqType, combine_fragment({Path, Query, Fragment}), Headers, ReqOpts)
+            };
+        Error ->
+            {response, Error}
+    end.
+
+parse_uri(URI) ->
+    ParseOpts = [
+        {scheme_validation_fun, fun scheme_validation/1},
+        {fragment, true}
+    ],
+    case http_uri:parse(URI, ParseOpts) of
+        {ok, {Scheme, UserInfo, Host, Port, Path, Query}} ->
+            {ok, {Scheme, UserInfo, Host, Port, Path, Query, ""}};
+        {ok, {Scheme, UserInfo, Host, Port, Path, Query, Fragment}} ->
+            {ok, {Scheme, UserInfo, Host, Port, Path, Query, Fragment}};
         {error, Reason} ->
             {error, Reason}
     end.
 
-req(Host) ->
-    req(Host, "/").
+start_or_use(undefined, Host, Scheme, Port, ConnectOpts, Timeout, ConnType) ->
+    {ok, _Pid} = holster_sm:start_link(
+        Host, Scheme, Port, ConnectOpts, Timeout, ConnType);
+start_or_use(Pid, _, _, _, _, _, _) ->
+    {ok, Pid}.
 
-req(Host, URI) ->
-    req(Host, URI, http).
+scheme_validation(Scheme) when
+        Scheme =:= "http" orelse
+        Scheme =:= "https" orelse
+        Scheme =:= <<"http">> orelse
+        Scheme =:= <<"https">> ->
+    valid;
+scheme_validation(_) ->
+    {error, invalid_scheme}.
 
-req(Host, URI, http) ->
-    req(Host, URI, http, 80);
-req(Host, URI, https) ->
-    req(Host, URI, https, 443).
+combine_fragment({Path, Query, Fragment}) ->
+    Path ++ Query ++ Fragment.
 
-req(Host, URI, https, Port) when Port /= 443 ->
-    req(Host, URI, https, Port, #{transport => tls}, 1000);
-req(Host, URI, Proto, Port) ->
-    req(Host, URI, Proto, Port, #{}, 1000).
-
-req(Host, URI, Proto, Port, OptsMap, Timeout) ->
-    req(Host, URI, Proto, Port, OptsMap, Timeout, once_off).
-
-req(Host, URI, Proto, Port, OptsMap, Timeout, once_off = ConnType) ->
-    {ok, Pid} = holster_sm:start_link(Host, Proto, Port, OptsMap, Timeout, ConnType),
-    holster_sm:req(Pid, URI);
-req(Host, URI, Proto, Port, OptsMap, Timeout, long_running = ConnType) ->
-    {ok, Pid} = holster_conn_sup:start_child(
-        Host, Proto, Port, OptsMap, Timeout, ConnType),
-    erlang:monitor(process, Pid),
-    {{ok, Pid}, holster_sm:req(Pid, URI)}.
+req_response_only(R={response, Response}) ->
+    R;
+req_response_only({_, Response}) ->
+    Response.
 
 close_req(Pid) ->
     holster_sm:close(Pid).
