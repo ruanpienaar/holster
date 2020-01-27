@@ -1,5 +1,10 @@
 -module(holster_request).
 
+%% @doc Shortlived process for making requests then closing
+%% connect(open)/waiting-for-up/making-a-request
+%% all have a timeout of 60s
+%% @end
+
 -include_lib("kernel/include/logger.hrl").
 
 -export([
@@ -7,6 +12,12 @@
     req/6
 ]).
 
+%% TODO
+%% handle 'DOWN'
+%% connecting timeout
+%% connected timeout
+%% in_request timeout
+%% receive_data timeout
 
 start_link(Host, Proto, Port, ConnectOpts, Timeout) ->
     {ok, proc_lib:spawn_link(fun() ->
@@ -30,13 +41,27 @@ connect(#{
     } = State) ->
     case gun:open(Host, Port, ConnectOpts) of
         {ok, ConnPid} ->
+            true = erlang:link(ConnPid),
             MRef = monitor(process, ConnPid),
-            connected(State#{
+            connecting(State#{
                 conn_pid => ConnPid,
                 conn_m_ref => MRef
             });
         {error, OpenError} ->
             {error, OpenError}
+    end.
+
+connecting(#{
+            conn_pid := ConnPid,
+            proto := Proto
+        } = State) ->
+    receive
+        {gun_up, ConnPid, Proto} ->
+            connected(State)
+    after
+        60000 ->
+            ok = gun:close(ConnPid),
+            exit(self())
     end.
 
 connected(#{
@@ -50,8 +75,10 @@ connected(#{
                 client_pid => ClientPid,
                 req_timeout => ReqTimeout
             })
-        % Other ->
-        %     ?LOG_WARNING({recv_other, ?FUNCTION_NAME, Other})
+    after
+        60000 ->
+            ok = gun:close(ConnPid),
+            exit(self())
     end.
 
 %% TODO: deduct timeout with time spent to get remainder... OR Set timeout with timer:
@@ -70,8 +97,10 @@ in_request(#{
             }));
         {gun_response, ConnPid, _StreamRef, fin, Status, RespHeaders} ->
             reply(ClientPid, {Status, RespHeaders, <<>>})
-        % Other ->
-        %     ?LOG_WARNING({recv_other, ?FUNCTION_NAME, Other})
+    after
+        60000 ->
+            ok = gun:close(ConnPid),
+            exit(self())
     end.
 
 receive_data(#{

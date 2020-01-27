@@ -52,6 +52,8 @@
     another_request/3,
     another_request/4,
     another_request/5,
+    ws_connect/3,
+    ws_req/2,
     close_req/1
 ]).
 
@@ -149,6 +151,29 @@ another_request(ReqType, URI, Headers, Pid) ->
         -> {{ok, pid()}, {response, term()}}.
 another_request(ReqType, URI, Headers, ReqOpts, Pid) ->
     do_req(ReqType, URI, #{}, Headers, ReqOpts, stay_connected, Pid).
+
+% ws_connect(Host, Proto, Port, ConnectOpts, WsPath, Timeout) ->
+% TODO: check if query is allowed? or just test it...
+ws_connect(URI, ConnectOpts, WsOpts) ->
+    {ok, {Proto, _UserInfo, Host, Port, WsPath, _Query, _Fragment}} =
+        parse_uri(URI),
+    {ok, Pid} = holster_ws:start_link(
+        Host, Proto, Port, ConnectOpts, WsOpts, WsPath, _Timeout=5000),
+    % case holster_ws:ws_upgrade(Pid) of
+    %     {ws_upgraded, _WsHeaders} ->
+    %         %% Could reply with headers if interested
+    %         {ok, Pid};
+    %     {error, {ws_upgrade, timeout}} ->
+    %         {error, {ws_upgrade, timeout}}
+    % end.
+
+    {ok, Pid}.
+
+% {ws_response,{close,1011,<<>>}}
+ws_req(WsPid, Term) ->
+    holster_ws:ws_send(WsPid, Term).
+
+%%=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 -spec do_req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers(), gun:req_opts(), conn_type())
         -> {response, term()}.

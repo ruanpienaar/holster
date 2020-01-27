@@ -1,5 +1,5 @@
 # holster
-A holster for [Gun](https://github.com/ninenines/gun)
+A [Gun](https://github.com/ninenines/gun) holster
 
 ## Quickstart
 
