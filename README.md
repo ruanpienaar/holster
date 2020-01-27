@@ -5,44 +5,62 @@ A [Gun](https://github.com/ninenines/gun) holster
 
 ```
 $ make
-$ ./start-dev.sh
+$ ./rebar3 shell
 erl> {ok, _} = application:ensure_all_started(holster).
 ```
 
-## Example requests:
+## Description:
 
-You can either have a once-off request, or a long-running request.
-a once-off request connects to the given host, makes the call, and tears
-down the connection, whereas a long-running connection will keep the
-connection open for consecutive requests made.
+holster makes the gun interaction simpler, by hiding out some of the fancy
+footwork required.
+Support for long running connections (http2), and simple requests.
+connection get's teared down for simple requests after each request.
 
-### Once off:
+### [simple request](https://github.com/ruanpienaar/holster/blob/master/src/holster.erl#L92):
+
+( req/2/3/4/5 )
+
 ```Erlang
-holster:once_off_req(Url :: string()) =
+holster:req(req_type(), Uri :: string()) =
   {response, Resonse :: {resp_code() :: non_neg_integer(), 
-                         resp_headers() :: proplists:proplist(),
+                         gun:resp_headers(),
                          response() :: binary()} | 
   {response, ErrResponse :: term()}
 ```
 
-### Long running:
+### Example simple request
+
 ```Erlang
-holster:long_running_req(Url :: string()) =
+holster:req(get, "http://www.google.com").
+```
+
+### Stay connected request:
+```Erlang
+holster:stay_connected_req(Uri :: string()) =
   {
      {ok, pid()}, {response, Resonse :: {resp_code() :: non_neg_integer(), 
-                         resp_headers() :: proplists:proplist(),
-                         response() :: binary()}}
-     {
-                  {response, ErrResponse :: term()}
+                                         resp_headers(),
+                                         response() :: binary()}} |
+     {response, ErrResponse :: term()}
   }
+```
 
-holster:long_running_req(Url :: string(), PidOrOpts :: pid() | gun:opts()) =
+and then all other subsequent requests made with the pid:
+
+```Erlang
+holster:another_request(get, Uri :: string(), PidOrOpts :: pid()) =
   {response, Resonse :: {resp_code() :: non_neg_integer(), 
                          resp_headers() :: proplists:proplist(),
                          response() :: binary()} | 
   {response, ErrResponse :: term()}
 ```
 
+### Basic erlang process approach
 
-TODO: reply with pid on long_running_req/2 when Opts passed in, or just both
-cases.
+```Erlang
+holster:simple_proc_req(req_type(), Uri :: string()) =
+  {response, Resonse :: {resp_code() :: non_neg_integer(), 
+                         resp_headers() :: proplists:proplist(),
+                         response() :: binary()} | 
+  {response, ErrResponse :: term()}
+```
