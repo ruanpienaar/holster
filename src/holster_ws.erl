@@ -165,65 +165,25 @@ in_ws_request(#{
     } = State) ->
     erlang:display({?FUNCTION_NAME, State}),
     receive
+        % duplication really just to showcase usage
+        {ws_send, {text, Json}} ->
+            ok = gun:ws_send(ConnPid, {text, Json}),
+            in_ws_request(State);
+        {ws_send, Term} ->
+            ok = gun:ws_send(ConnPid, Term),
+            in_ws_request(State);
         {gun_ws, ConnPid, WsRef, {close, 1011, <<>>}} ->
             % just close for now ...
             ok = gun:close(ConnPid);
             % connect(State);
         {gun_ws, ConnPid, WsRef, Frame} ->
             _ = reply(ClientPid, {ws_response, Frame}),
-            ws_connected(State)
+            in_ws_request(State)
     % CAN wait for response for longer than 1 minute.. for now
     % after
     %     5000 ->
     %         ok = gun:close(ConnPid),
     end.
-
-%% TODO: deduct timeout with time spent to get remainder... OR Set timeout with timer:
-% in_request(#{
-%         client_pid := ClientPid,
-%         conn_pid := ConnPid
-%     } = State) ->
-%     receive
-%         {gun_down, ConnPid, _Scheme, Reason, X} ->
-%             reply(ClientPid, {gun_down, ConnPid, _Scheme, Reason, X});
-%         {gun_response, ConnPid, _StreamRef, nofin, Status, RespHeaders} ->
-%             reply(ClientPid, receive_data(State#{
-%                 response_data => <<>>,
-%                 response_code => Status,
-%                 resonse_headers => RespHeaders
-%             }));
-%         {gun_response, ConnPid, _StreamRef, fin, Status, RespHeaders} ->
-%             reply(ClientPid, {Status, RespHeaders, <<>>})
-%     after
-%         5000 ->
-%             ok = gun:close(ConnPid),
-%             exit(self())
-%     end.
-
-% receive_data(#{
-%         conn_pid := ConnPid,
-%         stream_ref := StreamRef,
-%         conn_m_ref := MRef,
-%         response_data := ExistingResponsedata,
-%         req_timeout := ReqTimeout,
-%         response_code := Status,
-%         resonse_headers := RespHeaders
-%     } = State) ->
-%     receive
-%         {gun_data, ConnPid, StreamRef, nofin, Data} ->
-%             % io:format("~s~n", [Data]),
-%             receive_data(State#{
-%                 response_data => <<ExistingResponsedata/binary, Data/binary>>
-%             });
-%         {gun_data, ConnPid, StreamRef, fin, Data} ->
-%             {Status, RespHeaders, <<ExistingResponsedata/binary, Data/binary>>};
-%         {'DOWN', MRef, process, ConnPid, Reason} ->
-%             % error_logger:error_msg("Oops!"),
-%             % exit(Reason)
-%             {'DOWN', MRef, process, ConnPid, Reason}
-%     after ReqTimeout ->
-%         exit(timeout)
-%     end.
 
 reply(ClientPid, Response) ->
     ClientPid ! Response.
