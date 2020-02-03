@@ -197,7 +197,8 @@ do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, PidOrUndef) ->
 parse_uri(URI) ->
     ParseOpts = [
         {scheme_validation_fun, fun scheme_validation/1},
-        {fragment, true}
+        {fragment, true},
+        {scheme_defaults, [{ws, 80}, {wss, 443} | http_uri:scheme_defaults()]}
     ],
     case http_uri:parse(URI, ParseOpts) of
         {ok, {Scheme, UserInfo, Host, Port, Path, Query}} ->
@@ -218,7 +219,9 @@ scheme_validation(Scheme) when
         Scheme =:= "http" orelse
         Scheme =:= "https" orelse
         Scheme =:= <<"http">> orelse
-        Scheme =:= <<"https">> ->
+        Scheme =:= <<"https">> orelse
+        Scheme =:= "wss" orelse
+        Scheme =:= <<"wss">> ->
     valid;
 scheme_validation(_) ->
     {error, invalid_scheme}.
