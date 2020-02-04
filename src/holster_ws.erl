@@ -10,6 +10,7 @@
 -export([
     start_link/8,
     ws_upgrade/1,
+    ws_upgrade/2,
     ws_send/2
 ]).
 
@@ -37,24 +38,30 @@ start_link(Host, Proto, Port, ConnectOpts, WsPath, Timeouts, WsUpgradeHeaders, W
     end)}.
 
 ws_upgrade(Pid) ->
+    ws_upgrade(Pid, 5000).
+
+ws_upgrade(Pid, Timeout) ->
     Pid ! {ws_upgrade, self()},
     receive
         {ws_upgraded, WsHeaders} ->
             {ws_upgraded, WsHeaders}
     after
-        5000 ->
+        Timeout ->
             {error, {ws_upgrade, timeout}}
     end.
 
-%% TODO: do timeout example
+%% TODO: store multile clients later
 
 ws_send(Pid, Term) ->
-    Pid ! {ws_send, Term},
+    ws_send(Pid, Term, 5000).
+
+ws_send(Pid, Term, Timeout) ->
+    Pid ! {ws_send, self(), Term},
     receive
-        {ws_response, Response} ->
-            {ws_response, Response}
+        ws_sent ->
+            ok
     after
-        5000 ->
+        Timeout ->
             {error, {ws_send, timeout}}
     end.
 
@@ -153,12 +160,14 @@ ws_connected(#{
         default(lists:keyfind(connected_idle_timeout, 1, Timeouts), 60 * 60 * 1000),
     receive
         %% Sending data
-        {ws_send, {text, Json}} ->
+        {ws_send, NewClientPid, {text, Json}} ->
             ok = gun:ws_send(ConnPid, {text, Json}),
-            ws_connected(State);
-        {ws_send, Term} ->
+            NewClientPid ! ws_sent,
+            ws_connected(State#{ client_pid => NewClientPid });
+        {ws_send, NewClientPid, Term} ->
             ok = gun:ws_send(ConnPid, Term),
-            ws_connected(State);
+            NewClientPid ! ws_sent,
+            ws_connected(State#{ client_pid => NewClientPid });
         %% Receiving data
         {gun_ws, ConnPid, _WsRef, {close, 1011, <<>>}} ->
             ?LOG_DEBUG("[~p] (~p) ~p gun_ws {close, 1011, <<>>} in ws_connected", [?MODULE, ConnPid]),
