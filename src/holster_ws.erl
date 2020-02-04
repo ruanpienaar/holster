@@ -8,7 +8,7 @@
 -include_lib("kernel/include/logger.hrl").
 
 -export([
-    start_link/7,
+    start_link/8,
     ws_upgrade/1,
     ws_send/2
 ]).
@@ -22,7 +22,7 @@
 %% monitor client_pid - if 'DOWN', close request too
 %% handle/test when websocket closes
 
-start_link(Host, Proto, Port, ConnectOpts, WsOpts, WsPath, Timeout) ->
+start_link(Host, Proto, Port, ConnectOpts, WsPath, Timeouts, WsUpgradeHeaders, WsUpgradeOpts) ->
     {ok, proc_lib:spawn_link(fun() ->
         connect(#{
             host => Host,
@@ -30,8 +30,9 @@ start_link(Host, Proto, Port, ConnectOpts, WsOpts, WsPath, Timeout) ->
             port => Port,
             connectOpts => ConnectOpts,
             ws_path => WsPath,
-            ws_opts => WsOpts, % TODO
-            timeout => Timeout
+            timeouts => Timeouts,
+            ws_upgrade_headers => WsUpgradeHeaders,
+            ws_upgrade_opts => WsUpgradeOpts
         })
     end)}.
 
@@ -57,17 +58,13 @@ ws_send(Pid, Term) ->
             {error, {ws_send, timeout}}
     end.
 
-% -spec req(pid(), holster:req_type(), http_uri:uri(), gun:req_headers(), gun:req_opts(), timeout()) -> {response, term()}.
-% req(Pid, ReqType, URI, Headers, ReqOpts, ReqTimeout) when is_map(ReqOpts) ->
-%     Pid ! {req, self(), ReqType, URI, Headers, ReqOpts, ReqTimeout}.
-
 connect(#{
         host := Host,
         port := Port,
-        connectOpts := _ConnectOpts
+        connectOpts := ConnectOpts
     } = State) ->
-    erlang:display({?FUNCTION_NAME, State}),
-    case gun:open(Host, Port) of
+    ?LOG_DEBUG("~p ~p\n",[?MODULE, ?FUNCTION_NAME]),
+    case gun:open(Host, Port, ConnectOpts) of
         {ok, ConnPid} ->
             true = erlang:link(ConnPid),
             MRef = monitor(process, ConnPid),
@@ -81,109 +78,111 @@ connect(#{
 
 connecting(#{
             conn_pid := ConnPid,
-            proto := Proto
+            timeouts := Timeouts
         } = State) ->
-    erlang:display({?FUNCTION_NAME, State}),
+    ?LOG_DEBUG("~p ~p Conn:~p\n",[?MODULE, ?FUNCTION_NAME, ConnPid]),
+    AwaitUpTimeout =
+        default(lists:keyfind(ws_await_up_timeout, 1, Timeouts), 5000),
     receive
-        {gun_up, ConnPid, Proto} ->
+        {gun_up, ConnPid, _Proto} ->
             connected(State)
     after
-        5000 ->
+        AwaitUpTimeout ->
+            ?LOG_DEBUG("[~p] (~p) AwaitUpTimeout", [?MODULE, ConnPid]),
             ok = gun:close(ConnPid)
     end.
 
 connected(#{
-        conn_pid := ConnPid
+        conn_pid := ConnPid,
+        timeouts := Timeouts
     } = State) ->
-    % erlang:display({?FUNCTION_NAME, State}),
+    ?LOG_DEBUG("~p ~p Conn:~p\n",[?MODULE, ?FUNCTION_NAME, ConnPid]),
+    ConnectedIdleTimeout =
+        default(lists:keyfind(connected_idle_timeout, 1, Timeouts), 60 * 60 * 1000),
     receive
         {ws_upgrade, ClientPid} ->
             ws_upgrading(State#{ client_pid => ClientPid });
         {gun_down, ConnPid, _Proto} ->
-            % erlang:display({?FUNCTION_NAME, msg, {gun_down, ConnPid, _Proto}}),
+            ?LOG_DEBUG("[~p] (~p) gun_down in connected", [?MODULE, ConnPid]),
             connect(State);
         {gun_up, ConnPid, _Proto} ->
-            % erlang:display({?FUNCTION_NAME, msg, {gun_up, ConnPid, _Proto}}),
             connected(State)
-    % after
-    %     5000 ->
-    %         ok = gun:close(ConnPid)
+    after
+        ConnectedIdleTimeout ->
+            ?LOG_DEBUG("[~p] (~p) ConnectedIdleTimeout", [?MODULE, ConnPid]),
+            ok = gun:close(ConnPid)
     end.
 
 ws_upgrading(#{
         client_pid := ClientPid,
         conn_pid := ConnPid,
+        timeouts := Timeouts,
         ws_path := WsPath
     } = State) ->
-    erlang:display({?FUNCTION_NAME, State}),
-    WsRef = gun:ws_upgrade(ConnPid, WsPath),
+    ?LOG_DEBUG("~p ~p Conn:~p\n",[?MODULE, ?FUNCTION_NAME, ConnPid]),
+    WsUpgradeTimeout =
+        default(lists:keyfind(ws_upgrade_timeout, 1, Timeouts), 5000),
+    WsRef = gun:ws_upgrade(ConnPid, WsPath, [], #{}),
     receive
         {gun_upgrade, ConnPid, WsRef, [<<"websocket">>], WsHeaders} ->
-            % erlang:display(WsHeaders),
-            % [{<<"connection">>,<<"Upgrade">>},{<<"upgrade">>,<<"websocket">>},{<<"sec-websocket-accept">>,<<"vbjPYJDFpXziWzWTq0rGScsIRMo=">>}]
             _ = reply(ClientPid, {ws_upgraded, WsHeaders}),
             ws_connected(State#{
                 ws_ref => WsRef
             });
         {gun_response, ConnPid, _, _, Status, Headers} ->
+            ?LOG_DEBUG("[~p] (~p) ~p gun_response in ws_upgrading", [?MODULE, ConnPid, Status]),
+            ok = gun:close(ConnPid),
             exit({ws_upgrade_failed, Status, Headers});
         {gun_error, ConnPid, _StreamRef, Reason} ->
+            ?LOG_DEBUG("[~p] (~p) ~p gun_error in ws_upgrading", [?MODULE, ConnPid, Reason]),
+            ok = gun:close(ConnPid),
             exit({ws_upgrade_failed, Reason})
     after
-        5000 ->
+        WsUpgradeTimeout ->
+            ?LOG_DEBUG("[~p] (~p) WsUpgradeTimeout", [?MODULE, ConnPid]),
             ok = gun:close(ConnPid)
     end.
 
 ws_connected(#{
-        conn_pid := ConnPid
+        client_pid := ClientPid,
+        conn_pid := ConnPid,
+        timeouts := Timeouts
     } = State) ->
-    % erlang:display({?FUNCTION_NAME, State}),
+    ?LOG_DEBUG("~p ~p Conn:~p\n",[?MODULE, ?FUNCTION_NAME, ConnPid]),
+    ConnectedIdleTimeout =
+        default(lists:keyfind(connected_idle_timeout, 1, Timeouts), 60 * 60 * 1000),
     receive
-        % duplication really just to showcase usage
+        %% Sending data
         {ws_send, {text, Json}} ->
             ok = gun:ws_send(ConnPid, {text, Json}),
-            in_ws_request(State);
+            ws_connected(State);
         {ws_send, Term} ->
             ok = gun:ws_send(ConnPid, Term),
-            in_ws_request(State);
+            ws_connected(State);
+        %% Receiving data
+        {gun_ws, ConnPid, _WsRef, {close, 1011, <<>>}} ->
+            ?LOG_DEBUG("[~p] (~p) ~p gun_ws {close, 1011, <<>>} in ws_connected", [?MODULE, ConnPid]),
+            ok = gun:close(ConnPid);
+        {gun_ws, ConnPid, WsRef, Frame} ->
+            ?LOG_DEBUG("WS ~p ~p ~p", [ConnPid, WsRef, Frame]),
+            _ = reply(ClientPid, {ws_response, Frame}),
+            ws_connected(State);
         {gun_down, ConnPid, _Proto} ->
-            % erlang:display({?FUNCTION_NAME, msg, Other}),
+            ?LOG_DEBUG("[~p] (~p) gun_down in ws_connected", [?MODULE, ConnPid]),
             connect(State);
         {gun_up, ConnPid, _Proto} ->
-            % erlang:display({?FUNCTION_NAME, msg, Other}),
+            ?LOG_DEBUG("[~p] (~p) gun_up in ws_connected", [?MODULE, ConnPid]),
             ws_connected(State)
-    % CAN stay connected for longer than 1 minute.. for now
-    % after
-    %     5000 ->
-    %         ok = gun:close(ConnPid),
-    end.
-
-in_ws_request(#{
-        conn_pid := ConnPid,
-        ws_ref := WsRef,
-        client_pid := ClientPid
-    } = State) ->
-    erlang:display({?FUNCTION_NAME, State}),
-    receive
-        % duplication really just to showcase usage
-        {ws_send, {text, Json}} ->
-            ok = gun:ws_send(ConnPid, {text, Json}),
-            in_ws_request(State);
-        {ws_send, Term} ->
-            ok = gun:ws_send(ConnPid, Term),
-            in_ws_request(State);
-        {gun_ws, ConnPid, WsRef, {close, 1011, <<>>}} ->
-            % just close for now ...
-            ok = gun:close(ConnPid);
-            % connect(State);
-        {gun_ws, ConnPid, WsRef, Frame} ->
-            _ = reply(ClientPid, {ws_response, Frame}),
-            in_ws_request(State)
-    % CAN wait for response for longer than 1 minute.. for now
-    % after
-    %     5000 ->
-    %         ok = gun:close(ConnPid),
+    after
+        ConnectedIdleTimeout ->
+            ?LOG_DEBUG("[~p] (~p) ws_connected IdleTimeout", [?MODULE, ConnPid]),
+            ok = gun:close(ConnPid)
     end.
 
 reply(ClientPid, Response) ->
     ClientPid ! Response.
+
+default(false, Default) ->
+    Default;
+default({_, V}, _) ->
+    V.

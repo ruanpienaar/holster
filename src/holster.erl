@@ -30,6 +30,9 @@
 
 -type req_type() :: get | head | options | patch | post | put.
 -type conn_type() :: once | stay_connected.
+% -type default_ws_timetouts() :: [
+
+% ].
 
 -export_type([
     req_type/0,
@@ -52,7 +55,8 @@
     another_request/3,
     another_request/4,
     another_request/5,
-    ws_connect/3,
+    ws_connect/2,
+    ws_connect/5,
     ws_req/2,
     close_req/1
 ]).
@@ -152,22 +156,29 @@ another_request(ReqType, URI, Headers, Pid) ->
 another_request(ReqType, URI, Headers, ReqOpts, Pid) ->
     do_req(ReqType, URI, #{}, Headers, ReqOpts, stay_connected, Pid).
 
-% ws_connect(Host, Proto, Port, ConnectOpts, WsPath, Timeout) ->
-% TODO: check if query is allowed? or just test it...
-ws_connect(URI, ConnectOpts, WsOpts) ->
+-spec ws_connect(http_uri:uri(), gun:opts()) -> {ok, pid(), gun:resp_headers()} | {error, {ws_upgrade, timeout}}.
+ws_connect(URI, ConnectOpts) ->
+    ws_connect(URI, ConnectOpts, default_ws_timeouts(), [], #{}).
+
+ws_connect(URI, ConnectOpts, Timeouts, WsUpgradeHeaders, WsUpgradeOpts) ->
     {ok, {Proto, _UserInfo, Host, Port, WsPath, _Query, _Fragment}} =
         parse_uri(URI),
     {ok, Pid} = holster_ws:start_link(
-        Host, Proto, Port, ConnectOpts, WsOpts, WsPath, _Timeout=5000),
-    % case holster_ws:ws_upgrade(Pid) of
-    %     {ws_upgraded, _WsHeaders} ->
-    %         %% Could reply with headers if interested
-    %         {ok, Pid};
-    %     {error, {ws_upgrade, timeout}} ->
-    %         {error, {ws_upgrade, timeout}}
-    % end.
+        Host, Proto, Port, ConnectOpts, WsPath, Timeouts, WsUpgradeHeaders, WsUpgradeOpts),
+    case holster_ws:ws_upgrade(Pid) of
+        {ws_upgraded, WsHeaders} ->
+            {ok, Pid, WsHeaders};
+        {error, {ws_upgrade, timeout}} ->
+            {error, {ws_upgrade, timeout}}
+    end.
 
-    {ok, Pid}.
+% -spec default_ws_timetouts() -> default_ws_timetouts().
+default_ws_timeouts() ->
+    [
+        {ws_await_up_timeout, 5000},
+        {connected_idle_timeout, 60 * 60 * 1000},
+        {ws_upgrade_timeout, 5000}
+    ].
 
 % {ws_response,{close,1011,<<>>}}
 ws_req(WsPid, Term) ->
