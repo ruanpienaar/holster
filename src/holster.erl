@@ -64,6 +64,7 @@
     ws_connect/2,
     ws_connect/5,
     ws_req/2,
+    ws_close/1,
     close_req/1
 ]).
 
