@@ -26,6 +26,12 @@
 %% NB: Fragments are included
 %% @end
 
+
+%% TODO:
+%src/holster.erl:212:51: Warning: http_uri:scheme_defaults/0 is deprecated and will be removed in OTP 25; use uri_string functions instead
+%src/holster.erl:214:10: Warning: http_uri:parse/2 is deprecated and will be removed in OTP 25; use uri_string functions instead
+
+
 -include_lib("kernel/include/logger.hrl").
 
 -type req_type() :: get | head | options | patch | post | put.
@@ -226,13 +232,16 @@ start_or_use(undefined, Host, Scheme, Port, ConnectOpts, Timeout, ConnType) ->
 start_or_use(Pid, _, _, _, _, _, _) ->
     {ok, Pid}.
 
+%%  TODO: mmm, why binary or b-strings??
 scheme_validation(Scheme) when
         Scheme =:= "http" orelse
         Scheme =:= "https" orelse
         Scheme =:= <<"http">> orelse
         Scheme =:= <<"https">> orelse
         Scheme =:= "wss" orelse
-        Scheme =:= <<"wss">> ->
+        Scheme =:= <<"wss">> orelse
+        Scheme =:= "ws" orelse
+        Scheme =:= <<"ws">> ->
     valid;
 scheme_validation(_) ->
     {error, invalid_scheme}.
