@@ -11,7 +11,8 @@
     start_link/8,
     ws_upgrade/1,
     ws_upgrade/2,
-    ws_send/2
+    ws_send/2,
+    close/1
 ]).
 
 %% TODO
@@ -65,6 +66,13 @@ ws_send(Pid, Term, Timeout) ->
             {error, {ws_send, timeout}}
     end.
 
+close(Pid) ->
+    _ = Pid ! close,
+    ok.
+
+%% ---
+%% Internals
+
 connect(#{
         host := Host,
         port := Port,
@@ -92,7 +100,9 @@ connecting(#{
         default(lists:keyfind(ws_await_up_timeout, 1, Timeouts), 5000),
     receive
         {gun_up, ConnPid, _Proto} ->
-            connected(State)
+            connected(State);
+        close ->
+            ok = gun:close(ConnPid)
     after
         AwaitUpTimeout ->
             ?LOG_DEBUG("[~p] (~p) AwaitUpTimeout", [?MODULE, ConnPid]),
@@ -113,7 +123,9 @@ connected(#{
             ?LOG_DEBUG("[~p] (~p) gun_down in connected", [?MODULE, ConnPid]),
             connect(State);
         {gun_up, ConnPid, _Proto} ->
-            connected(State)
+            connected(State);
+        close ->
+            ok = gun:close(ConnPid)
     after
         ConnectedIdleTimeout ->
             ?LOG_DEBUG("[~p] (~p) ConnectedIdleTimeout", [?MODULE, ConnPid]),
@@ -143,7 +155,9 @@ ws_upgrading(#{
         {gun_error, ConnPid, _StreamRef, Reason} ->
             ?LOG_DEBUG("[~p] (~p) ~p gun_error in ws_upgrading", [?MODULE, ConnPid, Reason]),
             ok = gun:close(ConnPid),
-            exit({ws_upgrade_failed, Reason})
+            exit({ws_upgrade_failed, Reason});
+        close ->
+            ok = gun:close(ConnPid)
     after
         WsUpgradeTimeout ->
             ?LOG_DEBUG("[~p] (~p) WsUpgradeTimeout", [?MODULE, ConnPid]),
@@ -181,7 +195,9 @@ ws_connected(#{
             connect(State);
         {gun_up, ConnPid, _Proto} ->
             ?LOG_DEBUG("[~p] (~p) gun_up in ws_connected", [?MODULE, ConnPid]),
-            ws_connected(State)
+            ws_connected(State);
+        close ->
+            ok = gun:close(ConnPid)
     after
         ConnectedIdleTimeout ->
             ?LOG_DEBUG("[~p] (~p) ws_connected IdleTimeout", [?MODULE, ConnPid]),

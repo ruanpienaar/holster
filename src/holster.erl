@@ -190,6 +190,9 @@ default_ws_timeouts() ->
 ws_req(WsPid, Term) ->
     holster_ws:ws_send(WsPid, Term).
 
+ws_close(WsPid) ->
+    holster_ws:close(WsPid).
+
 %%=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 -spec do_req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers(), gun:req_opts(), conn_type())
