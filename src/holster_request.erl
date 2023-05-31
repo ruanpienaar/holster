@@ -95,13 +95,14 @@ connect(#{
         {error, OpenError} ->
             {error, OpenError}
     end.
+
 connecting(#{
             timed := true,
             conn_pid := ConnPid,
             proto := Proto
         } = State) ->
     receive
-        {gun_up, ConnPid, Proto} ->
+        {gun_up, ConnPid, _} -> %% 3rd could be http2, not https :(
             AfterConnectingMicSec = erlang:system_time(microsecond),
             connected(State#{
                 after_opening_micsec => AfterConnectingMicSec
