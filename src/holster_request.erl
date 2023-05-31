@@ -11,7 +11,8 @@
     start_link/5,
     start_link/6,
     req/6,
-    req_timed/6
+    req_timed/6,
+    req_timed/7
 ]).
 
 %% TODO
@@ -54,6 +55,9 @@ req(Pid, ReqType, URI, Headers, ReqOpts, ReqTimeout) when is_map(ReqOpts) ->
 req_timed(Pid, ReqType, URI, Headers, ReqOpts, ReqTimeout) when is_map(ReqOpts) ->
     Pid ! {req_timed, self(), ReqType, URI, Headers, ReqOpts, ReqTimeout}.
 
+% -spec req_timed(pid(), holster:req_type(), http_uri:uri(), gun:req_headers(), gun:req_opts(), timeout()) -> {response, term()}.
+req_timed(Pid, ReqType, URI, Headers, ReqOpts, ReqTimeout, Body) when is_map(ReqOpts) ->
+    Pid ! {req_timed, self(), ReqType, URI, Headers, ReqOpts, ReqTimeout, Body}.
 
 connect(#{
         timed := true,
@@ -134,6 +138,16 @@ connected(#{
         {req_timed, ClientPid, ReqType, URI, Headers, ReqOpts, ReqTimeout} ->
             RecvReqMicSec = erlang:system_time(microsecond),
             StreamRef = gun:ReqType(ConnPid, URI, Headers, ReqOpts),
+            in_request(State#{
+                recv_req_micsec => RecvReqMicSec,
+                stream_ref => StreamRef,
+                client_pid => ClientPid,
+                req_timeout => ReqTimeout
+            });
+        {req_timed, ClientPid, _ReqType, URI, Headers, ReqOpts, ReqTimeout, Body} ->
+            RecvReqMicSec = erlang:system_time(microsecond),
+            % StreamRef = gun:request(ConnPid, ReqType, URI, Headers, Body),
+            StreamRef = gun:post(ConnPid, URI, Headers, Body, ReqOpts),
             in_request(State#{
                 recv_req_micsec => RecvReqMicSec,
                 stream_ref => StreamRef,
