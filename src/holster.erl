@@ -50,6 +50,8 @@
     simple_proc_req/3,
     simple_proc_req/4,
     simple_proc_req/5,
+    simple_proc_req_timed/5,
+    simple_proc_req_timed/6,
     req/2,
     req/3,
     req/4,
@@ -94,7 +96,48 @@ simple_proc_req(ReqType, URI, ConnectOpts, Headers, Timeout) ->
     {ok, {Scheme, _UserInfo, Host, Port, Path, Query, Fragment}} = parse_uri(URI),
     {ok, Pid} = holster_request:start_link(Host, Scheme, Port, ConnectOpts, Timeout),
     _ = holster_request:req(
-        Pid, ReqType, combine_fragment({Path, Query, Fragment}), Headers, ConnectOpts, Timeout),
+        Pid,
+        ReqType,
+        combine_fragment({Path, Query, Fragment}),
+        Headers,
+        ConnectOpts,
+        Timeout
+    ),
+    receive
+        A ->
+            {response, A}
+    end.
+
+% returns: {Status, RespHeaders, <<Data/binary>>, TimesMap}
+simple_proc_req_timed(ReqType, URI, ConnectOpts, Headers, Timeout) ->
+    {ok, {Scheme, _UserInfo, Host, Port, Path, Query, Fragment}} = parse_uri(URI),
+    {ok, Pid} = holster_request:start_link(Host, Scheme, Port, ConnectOpts, Timeout, timed),
+    _ = holster_request:req_timed(
+        Pid,
+        ReqType,
+        combine_fragment({Path, Query, Fragment}),
+        Headers,
+        ConnectOpts,
+        Timeout
+    ),
+    receive
+        A ->
+            {response, A}
+    end.
+
+% returns: {Status, RespHeaders, <<Data/binary>>, TimesMap}
+simple_proc_req_timed(ReqType, URI, ConnectOpts, Headers, Timeout, Body) ->
+    {ok, {Scheme, _UserInfo, Host, Port, Path, Query, Fragment}} = parse_uri(URI),
+    {ok, Pid} = holster_request:start_link(Host, Scheme, Port, ConnectOpts, Timeout, timed),
+    _ = holster_request:req_timed(
+        Pid,
+        ReqType,
+        combine_fragment({Path, Query, Fragment}),
+        Headers,
+        ConnectOpts,
+        Timeout,
+        Body
+    ),
     receive
         A ->
             {response, A}
