@@ -1,5 +1,8 @@
 -module(holster).
 
+% src/holster.erl:283:51: Warning: http_uri:scheme_defaults/0 is deprecated and will be removed in OTP 25; use uri_string functions instead
+% src/holster.erl:285:10: Warning: http_uri:parse/2 is deprecated and will be removed in OTP 25; use uri_string functions instead
+
 %% @doc
 %% req/1/2/3/4 makes the request the process is cleaned up,
 %% compared to stay_connected/1/2/3/4 that keeps the connection up for further requests
@@ -60,6 +63,8 @@
     stay_connected_req/3,
     stay_connected_req/4,
     stay_connected_req/5,
+    stay_connected_req/6,
+    stay_connected_req/7,
     another_request/3,
     another_request/4,
     another_request/5,
@@ -191,6 +196,16 @@ stay_connected_req(ReqType, URI, ConnectOpts, Headers) ->
 stay_connected_req(ReqType, URI, ConnectOpts, Headers, ReqOpts) ->
     do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, stay_connected).
 
+-spec stay_connected_req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers(), gun:req_opts(), binary() | undefined)
+        -> {{ok, pid()}, {response, term()}}.
+stay_connected_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, Body) ->
+    do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, stay_connected, Body).
+
+-spec stay_connected_req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers(), gun:req_opts(), binary() | undefined, undefined | pid())
+        -> {{ok, pid()}, {response, term()}}.
+stay_connected_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, Body, Pid) ->
+    do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, stay_connected, Body, Pid).
+
 -spec another_request(req_type(), http_uri:uri(), pid())
         -> {{ok, pid()}, {response, term()}}.
 another_request(ReqType, URI, Pid) ->
@@ -239,20 +254,26 @@ ws_close(WsPid) ->
 
 %%=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
--spec do_req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers(), gun:req_opts(), conn_type())
-        -> {response, term()}.
 do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType) ->
     do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, undefined).
 
--spec do_req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers(), gun:req_opts(), conn_type(), undefined | pid())
-        -> {response, term()}.
-do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, PidOrUndef) ->
+do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, Body) ->
+    do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, Body, undefined).
+
+do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, Body, PidOrUndef) ->
     case parse_uri(URI) of
         {ok, {Scheme, _UserInfo, Host, Port, Path, Query, Fragment}} ->
             {ok, Pid} = start_or_use(PidOrUndef, Host, Scheme, Port, ConnectOpts, undefined, ConnType),
             {
                 {ok, Pid},
-                holster_sm:req(Pid, ReqType, combine_fragment({Path, Query, Fragment}), Headers, ReqOpts)
+                holster_sm:req(
+                    Pid,
+                    ReqType,
+                    combine_fragment({Path, Query, Fragment}),
+                    Headers,
+                    ReqOpts,
+                    Body
+                )
             };
         Error ->
             {response, Error}
