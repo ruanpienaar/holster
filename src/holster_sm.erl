@@ -170,7 +170,7 @@ connected(enter, PrevState, #{
     ?LOG_DEBUG("~p -> ENTER PrevState ~p", [?FUNCTION_NAME, PrevState]),
     keep_state_and_data;
 connected({call, From},
-          {req, ReqType, URI, Headers, ReqOpts},
+          {req, ReqType, URI, Headers, ReqOpts, Body},
           #{ conn_type := ConnType } = Data) ->
     ?LOG_DEBUG("~p({call, ~p}, ~p ~p, ",
         [?FUNCTION_NAME, From, ConnType, {req, ReqType, URI, Headers, ReqOpts}]),
