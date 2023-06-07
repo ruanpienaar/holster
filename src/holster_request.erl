@@ -99,7 +99,7 @@ connect(#{
 connecting(#{
             timed := true,
             conn_pid := ConnPid,
-            proto := Proto
+            proto := _Proto
         } = State) ->
     receive
         {gun_up, ConnPid, _} -> %% 3rd could be http2, not https :(

@@ -175,6 +175,7 @@ connected({call, From},
     ?LOG_DEBUG("~p({call, ~p}, ~p ~p, ",
         [?FUNCTION_NAME, From, ConnType, {req, ReqType, URI, Headers, ReqOpts}]),
     {next_state, in_request, Data#{
+        body => Body,
         req_uri => URI,
         req_type => ReqType,
         req_headers => Headers,
