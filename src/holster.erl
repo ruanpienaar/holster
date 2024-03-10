@@ -277,26 +277,20 @@ do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, Body, PidOrUndef) 
     end.
 
 parse_uri(URI) ->
-% 1> uri_string:parse("foo://user@example.com:8042/over/there?name=ferret#nose").
-% #{fragment => "nose",host => "example.com",
-%   path => "/over/there",port => 8042,query => "name=ferret",
-%   scheme => foo,userinfo => "user"}
     URIMap = uri_string:parse(URI),
     Scheme = maps:get(scheme, URIMap, undefined),
-    io:format("Scheme ~p\n", [Scheme]),
-    case scheme_validation(Scheme) of
-        valid ->
-            GunFriendlyScheme = gun_friendly_scheme(Scheme),
-            URIMapWithDefaults = get_defaults(URIMap),
+    case gun_friendly_scheme(Scheme) of
+        {error, unsupported_scheme} ->
+            {error, unsupported_scheme};
+        GunFriendlyScheme ->
+            URIMapWithDefaults = get_defaults(URIMap#{scheme => GunFriendlyScheme}),
             UserInfo = maps:get(user, URIMapWithDefaults, ""),
             Host = maps:get(host, URIMapWithDefaults, ""),
             Port = maps:get(port, URIMapWithDefaults, ""),
             Path = maps:get(path, URIMapWithDefaults, ""),
             Query = maps:get(query, URIMapWithDefaults, ""),
             Fragment = maps:get(fragment, URIMapWithDefaults, ""),
-            {ok, {GunFriendlyScheme, UserInfo, Host, Port, Path, Query, Fragment}};
-        {error, invalid_scheme} ->
-            {error, invalid_scheme}
+            {ok, {GunFriendlyScheme, UserInfo, Host, Port, Path, Query, Fragment}}
     end.
 
 start_or_use(undefined, Host, Scheme, Port, ConnectOpts, Timeout, ConnType) ->
@@ -313,18 +307,16 @@ get_defaults(URIMap) ->
     },
     maps:merge(URIMap, Defaults).
 
-scheme_validation(Scheme) when
-        Scheme =:= "http" orelse
-        Scheme =:= "https" orelse
-        Scheme =:= "wss" orelse
-        Scheme =:= "ws"
-        ->
-    valid;
-scheme_validation(_) ->
-    {error, invalid_scheme}.
-
-gun_friendly_scheme(Scheme) ->
-    erlang:list_to_existing_atom(Scheme).
+gun_friendly_scheme(Scheme) when is_binary(Scheme) ->
+    erlang:binary_to_list(gun_friendly_scheme(Scheme));
+gun_friendly_scheme(Scheme) when is_list(Scheme) ->
+    try
+        %% Atoms are created in holster_sup
+        erlang:list_to_existing_atom(Scheme)
+    catch
+        _:_:_ ->
+            {error, unsupported_scheme}
+    end.
 
 combine_fragment({Path, Query, Fragment}) ->
     Path ++ Query ++ Fragment.
@@ -332,15 +324,15 @@ combine_fragment({Path, Query, Fragment}) ->
 close_req(Pid) ->
     holster_sm:close(Pid).
 
-scheme_defaults("http") ->
+scheme_defaults(http) ->
     80;
-scheme_defaults("https") ->
+scheme_defaults(https) ->
     443;
-scheme_defaults("ftp") ->
+scheme_defaults(ftp) ->
     21;
-scheme_defaults("ssh") ->
+scheme_defaults(ssh) ->
     22;
-scheme_defaults("sftp") ->
+scheme_defaults(sftp) ->
     22;
-scheme_defaults("tftp") ->
+scheme_defaults(tftp) ->
     69.
