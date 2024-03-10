@@ -13,6 +13,7 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
+    create_connection_proto_atoms(),
     {ok, { {one_for_one, 5, 10}, [
                 #{
                     id       => holster_conn_sup,                   % mandatory
@@ -25,3 +26,13 @@ init([]) ->
             ]
         }
     }.
+
+create_connection_proto_atoms() ->
+    [
+        http,
+        https,
+        ftp,
+        ssh,
+        sftp,
+        tftp
+    ].

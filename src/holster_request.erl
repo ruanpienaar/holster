@@ -27,6 +27,7 @@
 start_link(Host, Proto, Port, ConnectOpts, Timeout) ->
     {ok, proc_lib:spawn_link(fun() ->
         connect(#{
+            timed => false,
             host => Host,
             proto => Proto,
             port => Port,
@@ -119,6 +120,9 @@ connecting(#{
     receive
         {gun_up, ConnPid, Proto} ->
             connected(State)
+        % Other ->
+        %     io:format("Recv Other ~p\n", [Other]),
+        %     connecting(State)
     after
         60000 ->
             ok = gun:close(ConnPid),
@@ -230,7 +234,7 @@ receive_data(#{
     } = State) ->
     receive
         {gun_data, ConnPid, StreamRef, nofin, Data} ->
-            % io:format("~s~n", [Data]),
+            io:format("~s~n", [Data]),
             receive_data(State#{
                 response_data => <<ExistingResponsedata/binary, Data/binary>>
             });

@@ -24,7 +24,7 @@ connection get's teared down for simple requests after each request.
 holster:req(req_type(), Uri :: string()) =
   {response, Resonse :: {resp_code() :: non_neg_integer(), 
                          gun:resp_headers(),
-                         response() :: binary()} | 
+                         response() :: binary()} |
   {response, ErrResponse :: term()}
 ```
 

@@ -140,22 +140,22 @@ simple_proc_req_timed(ReqType, URI, ConnectOpts, Headers, Timeout, Body) ->
             {response, A}
     end.
 
--spec req(req_type(), uri_string:uri_string())
-        -> {response, term()}.
+% -spec req(req_type(), uri_string:uri_string())
+%         -> {response, term()} | {'error','invalid_scheme'}.
 req(ReqType, URI) ->
     req_response_only(
         do_req(ReqType, URI, #{}, [], #{}, once)
     ).
 
--spec req(req_type(), uri_string:uri_string(), gun:opts())
-        -> {response, term()}.
+% -spec req(req_type(), uri_string:uri_string(), gun:opts())
+%         -> {response, term()}.
 req(ReqType, URI, ConnectOpts) ->
     req_response_only(
         do_req(ReqType, URI, ConnectOpts, [], #{}, once)
     ).
 
--spec req(req_type(), uri_string:uri_string(), gun:opts(), gun:req_headers())
-        -> {response, term()}.
+% -spec req(req_type(), uri_string:uri_string(), gun:opts(), gun:req_headers())
+%         -> {response, term()}.
 req(ReqType, URI, ConnectOpts, Headers) ->
     req_response_only(
         do_req(ReqType, URI, ConnectOpts, Headers, #{}, once)
@@ -167,6 +167,11 @@ req(ReqType, URI, ConnectOpts, Headers, ReqOpts) ->
     req_response_only(
         do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, once)
     ).
+
+req_response_only({response, Response}) ->
+    {response, Response};
+req_response_only({{ok, _Pid}, R}) ->
+    req_response_only(R).
 
 -spec stay_connected_req(req_type(), uri_string:uri_string())
         -> {{ok, pid()}, {response, term()}}.
@@ -278,13 +283,21 @@ parse_uri(URI) ->
 %   scheme => foo,userinfo => "user"}
     URIMap = uri_string:parse(URI),
     Scheme = maps:get(scheme, URIMap, undefined),
-    UserInfo = maps:get(user, URIMap, undefined),
-    Host = maps:get(host, URIMap, undefined),
-    Port = maps:get(port, URIMap, undefined),
-    Path = maps:get(path, URIMap, undefined),
-    Query = maps:get(query, URIMap, undefined),
-    Fragment = maps:get(fragment, URIMap, undefined),
-    {ok, {Scheme, UserInfo, Host, Port, Path, Query, Fragment}}.
+    io:format("Scheme ~p\n", [Scheme]),
+    case scheme_validation(Scheme) of
+        valid ->
+            GunFriendlyScheme = gun_friendly_scheme(Scheme),
+            URIMapWithDefaults = get_defaults(URIMap),
+            UserInfo = maps:get(user, URIMapWithDefaults, ""),
+            Host = maps:get(host, URIMapWithDefaults, ""),
+            Port = maps:get(port, URIMapWithDefaults, ""),
+            Path = maps:get(path, URIMapWithDefaults, ""),
+            Query = maps:get(query, URIMapWithDefaults, ""),
+            Fragment = maps:get(fragment, URIMapWithDefaults, ""),
+            {ok, {GunFriendlyScheme, UserInfo, Host, Port, Path, Query, Fragment}};
+        {error, invalid_scheme} ->
+            {error, invalid_scheme}
+    end.
 
 start_or_use(undefined, Host, Scheme, Port, ConnectOpts, Timeout, ConnType) ->
     {ok, _Pid} = holster_sm:start_link(
@@ -292,37 +305,42 @@ start_or_use(undefined, Host, Scheme, Port, ConnectOpts, Timeout, ConnType) ->
 start_or_use(Pid, _, _, _, _, _, _) ->
     {ok, Pid}.
 
-%%  TODO: mmm, why binary or b-strings??
-% scheme_validation(Scheme) when
-%         Scheme =:= "http" orelse
-%         Scheme =:= "https" orelse
-%         Scheme =:= <<"http">> orelse
-%         Scheme =:= <<"https">> orelse
-%         Scheme =:= "wss" orelse
-%         Scheme =:= <<"wss">> orelse
-%         Scheme =:= "ws" orelse
-%         Scheme =:= <<"ws">> ->
-%     valid;
-% scheme_validation(_) ->
-%     {error, invalid_scheme}.
+get_defaults(URIMap) ->
+    Scheme = maps:get(scheme, URIMap, undefined),
+    Defaults = #{
+        port => scheme_defaults(Scheme),
+        query => ""
+    },
+    maps:merge(URIMap, Defaults).
+
+scheme_validation(Scheme) when
+        Scheme =:= "http" orelse
+        Scheme =:= "https" orelse
+        Scheme =:= "wss" orelse
+        Scheme =:= "ws"
+        ->
+    valid;
+scheme_validation(_) ->
+    {error, invalid_scheme}.
+
+gun_friendly_scheme(Scheme) ->
+    erlang:list_to_existing_atom(Scheme).
 
 combine_fragment({Path, Query, Fragment}) ->
     Path ++ Query ++ Fragment.
 
-req_response_only(R={response, _}) ->
-    R;
-req_response_only({_, Response}) ->
-    Response.
-
 close_req(Pid) ->
     holster_sm:close(Pid).
 
-% scheme_defaults() ->
-%     [
-%         {http,80},
-%         {https,443},
-%         {ftp,21},
-%         {ssh,22},
-%         {sftp,22},
-%         {tftp,69}
-%     ].
+scheme_defaults("http") ->
+    80;
+scheme_defaults("https") ->
+    443;
+scheme_defaults("ftp") ->
+    21;
+scheme_defaults("ssh") ->
+    22;
+scheme_defaults("sftp") ->
+    22;
+scheme_defaults("tftp") ->
+    69.
