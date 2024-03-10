@@ -46,19 +46,19 @@
 start_link(Host, Proto, Port, ConnectOpts, Timeout, ConnType) when is_map(ConnectOpts) ->
     gen_statem:start_link(?MODULE, {Host, Proto, Port, ConnectOpts, Timeout, ConnType}, []).
 
-% -spec req(pid(), holster:req_type(), http_uri:uri()) -> {response, term()}.
+% -spec req(pid(), holster:req_type(), uri_string:uri_string()) -> {response, term()}.
 % req(Pid, ReqType, URI) ->
 %     req(Pid, ReqType, URI, [], #{}).
 
-% -spec req(pid(), holster:req_type(), http_uri:uri(), gun:req_headers()) -> {response, term()}.
+% -spec req(pid(), holster:req_type(), uri_string:uri_string(), gun:req_headers()) -> {response, term()}.
 % req(Pid, ReqType, URI, Headers) ->
 %     req(Pid, ReqType, URI, Headers, #{}).
 
-% -spec req(pid(), holster:req_type(), http_uri:uri(), gun:req_headers(), gun:req_opts()) -> {response, term()}.
+% -spec req(pid(), holster:req_type(), uri_string:uri_string(), gun:req_headers(), gun:req_opts()) -> {response, term()}.
 % req(Pid, ReqType, URI, Headers, ReqOpts) when is_map(ReqOpts) ->
 %     gen_statem:call(Pid, {req, ReqType, URI, Headers, ReqOpts}).
 
--spec req(pid(), holster:req_type(), http_uri:uri(), gun:req_headers(), gun:req_opts(), undefined | binary()) -> {response, term()}.
+-spec req(pid(), holster:req_type(), uri_string:uri_string(), gun:req_headers(), gun:req_opts(), undefined | binary()) -> {response, term()}.
 req(Pid, ReqType, URI, Headers, ReqOpts, Body) when is_map(ReqOpts) andalso (Body == undefined orelse is_binary(Body)) ->
     gen_statem:call(Pid, {req, ReqType, URI, Headers, ReqOpts, Body}).
 

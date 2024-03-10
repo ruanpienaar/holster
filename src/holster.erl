@@ -1,8 +1,5 @@
 -module(holster).
 
-% src/holster.erl:283:51: Warning: http_uri:scheme_defaults/0 is deprecated and will be removed in OTP 25; use uri_string functions instead
-% src/holster.erl:285:10: Warning: http_uri:parse/2 is deprecated and will be removed in OTP 25; use uri_string functions instead
-
 %% @doc
 %% req/1/2/3/4 makes the request the process is cleaned up,
 %% compared to stay_connected/1/2/3/4 that keeps the connection up for further requests
@@ -10,7 +7,6 @@
 %%  URI:
 %%
 %%  The following are two example URIs and their component parts:
-%%  ( Copied from inets-7.0.7 http_uri.erl )
 %%
 %%          foo://example.com:8042/over/there?name=ferret#nose
 %%          \_/   \______________/\_________/ \_________/ \__/
@@ -29,10 +25,6 @@
 %% NB: Fragments are included
 %% @end
 
-
-%% TODO:
-%src/holster.erl:212:51: Warning: http_uri:scheme_defaults/0 is deprecated and will be removed in OTP 25; use uri_string functions instead
-%src/holster.erl:214:10: Warning: http_uri:parse/2 is deprecated and will be removed in OTP 25; use uri_string functions instead
 
 
 -include_lib("kernel/include/logger.hrl").
@@ -148,80 +140,80 @@ simple_proc_req_timed(ReqType, URI, ConnectOpts, Headers, Timeout, Body) ->
             {response, A}
     end.
 
--spec req(req_type(), http_uri:uri())
+-spec req(req_type(), uri_string:uri_string())
         -> {response, term()}.
 req(ReqType, URI) ->
     req_response_only(
         do_req(ReqType, URI, #{}, [], #{}, once)
     ).
 
--spec req(req_type(), http_uri:uri(), gun:opts())
+-spec req(req_type(), uri_string:uri_string(), gun:opts())
         -> {response, term()}.
 req(ReqType, URI, ConnectOpts) ->
     req_response_only(
         do_req(ReqType, URI, ConnectOpts, [], #{}, once)
     ).
 
--spec req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers())
+-spec req(req_type(), uri_string:uri_string(), gun:opts(), gun:req_headers())
         -> {response, term()}.
 req(ReqType, URI, ConnectOpts, Headers) ->
     req_response_only(
         do_req(ReqType, URI, ConnectOpts, Headers, #{}, once)
     ).
 
--spec req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers(), gun:req_opts())
+-spec req(req_type(), uri_string:uri_string(), gun:opts(), gun:req_headers(), gun:req_opts())
         -> {response, term()}.
 req(ReqType, URI, ConnectOpts, Headers, ReqOpts) ->
     req_response_only(
         do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, once)
     ).
 
--spec stay_connected_req(req_type(), http_uri:uri())
+-spec stay_connected_req(req_type(), uri_string:uri_string())
         -> {{ok, pid()}, {response, term()}}.
 stay_connected_req(ReqType, URI) ->
     do_req(ReqType, URI, #{}, [], #{}, stay_connected).
 
--spec stay_connected_req(req_type(), http_uri:uri(), gun:opts())
+-spec stay_connected_req(req_type(), uri_string:uri_string(), gun:opts())
         -> {{ok, pid()}, {response, term()}}.
 stay_connected_req(ReqType, URI, ConnectOpts) ->
     do_req(ReqType, URI, ConnectOpts, [], #{}, stay_connected).
 
--spec stay_connected_req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers())
+-spec stay_connected_req(req_type(), uri_string:uri_string(), gun:opts(), gun:req_headers())
         -> {{ok, pid()}, {response, term()}}.
 stay_connected_req(ReqType, URI, ConnectOpts, Headers) ->
     do_req(ReqType, URI, ConnectOpts, Headers, #{}, stay_connected).
 
--spec stay_connected_req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers(), gun:req_opts())
+-spec stay_connected_req(req_type(), uri_string:uri_string(), gun:opts(), gun:req_headers(), gun:req_opts())
         -> {{ok, pid()}, {response, term()}}.
 stay_connected_req(ReqType, URI, ConnectOpts, Headers, ReqOpts) ->
     do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, stay_connected).
 
--spec stay_connected_req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers(), gun:req_opts(), binary() | undefined)
+-spec stay_connected_req(req_type(), uri_string:uri_string(), gun:opts(), gun:req_headers(), gun:req_opts(), binary() | undefined)
         -> {{ok, pid()}, {response, term()}}.
 stay_connected_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, Body) ->
     do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, stay_connected, Body).
 
--spec stay_connected_req(req_type(), http_uri:uri(), gun:opts(), gun:req_headers(), gun:req_opts(), binary() | undefined, undefined | pid())
+-spec stay_connected_req(req_type(), uri_string:uri_string(), gun:opts(), gun:req_headers(), gun:req_opts(), binary() | undefined, undefined | pid())
         -> {{ok, pid()}, {response, term()}}.
 stay_connected_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, Body, Pid) ->
     do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, stay_connected, Body, Pid).
 
--spec another_request(req_type(), http_uri:uri(), pid())
+-spec another_request(req_type(), uri_string:uri_string(), pid())
         -> {{ok, pid()}, {response, term()}}.
 another_request(ReqType, URI, Pid) ->
     do_req(ReqType, URI, #{}, [], #{}, stay_connected, Pid).
 
--spec another_request(req_type(), http_uri:uri(), gun:req_headers(), pid())
+-spec another_request(req_type(), uri_string:uri_string(), gun:req_headers(), pid())
         -> {{ok, pid()}, {response, term()}}.
 another_request(ReqType, URI, Headers, Pid) ->
     do_req(ReqType, URI, #{}, Headers, #{}, stay_connected, Pid).
 
--spec another_request(req_type(), http_uri:uri(), gun:req_headers(), gun:req_opts(), pid())
+-spec another_request(req_type(), uri_string:uri_string(), gun:req_headers(), gun:req_opts(), pid())
         -> {{ok, pid()}, {response, term()}}.
 another_request(ReqType, URI, Headers, ReqOpts, Pid) ->
     do_req(ReqType, URI, #{}, Headers, ReqOpts, stay_connected, Pid).
 
--spec ws_connect(http_uri:uri(), gun:opts()) -> {ok, pid(), gun:resp_headers()} | {error, {ws_upgrade, timeout}}.
+-spec ws_connect(uri_string:uri_string(), gun:opts()) -> {ok, pid(), gun:resp_headers()} | {error, {ws_upgrade, timeout}}.
 ws_connect(URI, ConnectOpts) ->
     ws_connect(URI, ConnectOpts, default_ws_timeouts(), [], #{}).
 
@@ -280,12 +272,12 @@ do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, Body, PidOrUndef) 
     end.
 
 parse_uri(URI) ->
-    ParseOpts = [
-        {scheme_validation_fun, fun scheme_validation/1},
-        {fragment, true},
-        {scheme_defaults, [{ws, 80}, {wss, 443} | http_uri:scheme_defaults()]}
-    ],
-    case http_uri:parse(URI, ParseOpts) of
+    % ParseOpts = [
+    %     {scheme_validation_fun, fun scheme_validation/1},
+    %     {fragment, true},
+    %     {scheme_defaults, [{ws, 80}, {wss, 443} | scheme_defaults()]}
+    % ],
+    case uri_string:parse(URI) of
         {ok, {Scheme, UserInfo, Host, Port, Path, Query}} ->
             {ok, {Scheme, UserInfo, Host, Port, Path, Query, ""}};
         {ok, {Scheme, UserInfo, Host, Port, Path, Query, Fragment}} ->
@@ -301,18 +293,18 @@ start_or_use(Pid, _, _, _, _, _, _) ->
     {ok, Pid}.
 
 %%  TODO: mmm, why binary or b-strings??
-scheme_validation(Scheme) when
-        Scheme =:= "http" orelse
-        Scheme =:= "https" orelse
-        Scheme =:= <<"http">> orelse
-        Scheme =:= <<"https">> orelse
-        Scheme =:= "wss" orelse
-        Scheme =:= <<"wss">> orelse
-        Scheme =:= "ws" orelse
-        Scheme =:= <<"ws">> ->
-    valid;
-scheme_validation(_) ->
-    {error, invalid_scheme}.
+% scheme_validation(Scheme) when
+%         Scheme =:= "http" orelse
+%         Scheme =:= "https" orelse
+%         Scheme =:= <<"http">> orelse
+%         Scheme =:= <<"https">> orelse
+%         Scheme =:= "wss" orelse
+%         Scheme =:= <<"wss">> orelse
+%         Scheme =:= "ws" orelse
+%         Scheme =:= <<"ws">> ->
+%     valid;
+% scheme_validation(_) ->
+%     {error, invalid_scheme}.
 
 combine_fragment({Path, Query, Fragment}) ->
     Path ++ Query ++ Fragment.
@@ -324,3 +316,13 @@ req_response_only({_, Response}) ->
 
 close_req(Pid) ->
     holster_sm:close(Pid).
+
+% scheme_defaults() ->
+%     [
+%         {http,80},
+%         {https,443},
+%         {ftp,21},
+%         {ssh,22},
+%         {sftp,22},
+%         {tftp,69}
+%     ].

@@ -47,15 +47,15 @@ start_link(Host, Proto, Port, ConnectOpts, Timeout, timed) ->
         })
     end)}.
 
--spec req(pid(), holster:req_type(), http_uri:uri(), gun:req_headers(), gun:req_opts(), timeout()) -> {response, term()}.
+-spec req(pid(), holster:req_type(), uri_string:uri_string(), gun:req_headers(), gun:req_opts(), timeout()) -> {response, term()}.
 req(Pid, ReqType, URI, Headers, ReqOpts, ReqTimeout) when is_map(ReqOpts) ->
     Pid ! {req, self(), ReqType, URI, Headers, ReqOpts, ReqTimeout}.
 
--spec req_timed(pid(), holster:req_type(), http_uri:uri(), gun:req_headers(), gun:req_opts(), timeout()) -> {response, term()}.
+-spec req_timed(pid(), holster:req_type(), uri_string:uri_string(), gun:req_headers(), gun:req_opts(), timeout()) -> {response, term()}.
 req_timed(Pid, ReqType, URI, Headers, ReqOpts, ReqTimeout) when is_map(ReqOpts) ->
     Pid ! {req_timed, self(), ReqType, URI, Headers, ReqOpts, ReqTimeout}.
 
-% -spec req_timed(pid(), holster:req_type(), http_uri:uri(), gun:req_headers(), gun:req_opts(), timeout()) -> {response, term()}.
+% -spec req_timed(pid(), holster:req_type(), uri_string:uri_string(), gun:req_headers(), gun:req_opts(), timeout()) -> {response, term()}.
 req_timed(Pid, ReqType, URI, Headers, ReqOpts, ReqTimeout, Body) when is_map(ReqOpts) ->
     Pid ! {req_timed, self(), ReqType, URI, Headers, ReqOpts, ReqTimeout, Body}.
 
