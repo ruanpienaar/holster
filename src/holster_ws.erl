@@ -141,12 +141,12 @@ ws_upgrading(#{
     ?LOG_DEBUG("~p ~p Conn:~p\n",[?MODULE, ?FUNCTION_NAME, ConnPid]),
     WsUpgradeTimeout =
         default(lists:keyfind(ws_upgrade_timeout, 1, Timeouts), 5000),
-    WsRef = gun:ws_upgrade(ConnPid, WsPath, [], #{}),
+    StreamRef = gun:ws_upgrade(ConnPid, WsPath, [], #{}),
     receive
-        {gun_upgrade, ConnPid, WsRef, [<<"websocket">>], WsHeaders} ->
+        {gun_upgrade, ConnPid, StreamRef, [<<"websocket">>], WsHeaders} ->
             _ = reply(ClientPid, {ws_upgraded, WsHeaders}),
             ws_connected(State#{
-                ws_ref => WsRef
+                stream_ref => StreamRef
             });
         {gun_response, ConnPid, _, _, Status, Headers} ->
             ?LOG_DEBUG("[~p] (~p) ~p gun_response in ws_upgrading", [?MODULE, ConnPid, Status]),
@@ -167,7 +167,8 @@ ws_upgrading(#{
 ws_connected(#{
         client_pid := ClientPid,
         conn_pid := ConnPid,
-        timeouts := Timeouts
+        timeouts := Timeouts,
+        stream_ref := StreamRef
     } = State) ->
     ?LOG_DEBUG("~p ~p Conn:~p\n",[?MODULE, ?FUNCTION_NAME, ConnPid]),
     ConnectedIdleTimeout =
@@ -175,19 +176,19 @@ ws_connected(#{
     receive
         %% Sending data
         {ws_send, NewClientPid, {text, Json}} ->
-            ok = gun:ws_send(ConnPid, {text, Json}),
+            ok = gun:ws_send(ConnPid, StreamRef, {text, Json}),
             NewClientPid ! ws_sent,
             ws_connected(State#{ client_pid => NewClientPid });
         {ws_send, NewClientPid, Term} ->
-            ok = gun:ws_send(ConnPid, Term),
+            ok = gun:ws_send(ConnPid, StreamRef, Term),
             NewClientPid ! ws_sent,
             ws_connected(State#{ client_pid => NewClientPid });
         %% Receiving data
-        {gun_ws, ConnPid, _WsRef, {close, 1011, <<>>}} ->
+        {gun_ws, ConnPid, _StreamRef, {close, 1011, <<>>}} ->
             ?LOG_DEBUG("[~p] (~p) ~p gun_ws {close, 1011, <<>>} in ws_connected", [?MODULE, ConnPid]),
             ok = gun:close(ConnPid);
-        {gun_ws, ConnPid, WsRef, Frame} ->
-            ?LOG_DEBUG("WS ~p ~p ~p", [ConnPid, WsRef, Frame]),
+        {gun_ws, ConnPid, StreamRef, Frame} ->
+            ?LOG_DEBUG("WS ~p ~p ~p", [ConnPid, StreamRef, Frame]),
             _ = reply(ClientPid, {ws_response, Frame}),
             ws_connected(State);
         {gun_down, ConnPid, _Proto} ->

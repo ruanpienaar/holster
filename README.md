@@ -64,3 +64,23 @@ holster:simple_proc_req(req_type(), Uri :: string()) =
                          response() :: binary()} | 
   {response, ErrResponse :: term()}
 ```
+
+### Websocket request:
+```Erlang
+ws_connect(uri_string:uri_string(), gun:opts()) = 
+  {ok, pid(), gun:resp_headers()} | 
+  {error, {ws_upgrade, timeout}}.
+```
+
+### Websocket request example:
+```Erlang
+{ok, <0.167.0>,
+    [{<<"upgrade">>, <<"websocket">>},
+     {<<"connection">>, <<"Upgrade">>},
+     {<<"sec-websocket-accept">>, <<"nRurElfkCM9Jf2Obkkcm5rqfpy8=">>},
+     {<<"date">>, <<"Sun, 10 Mar 2024 13:33:34 GMT">>},
+     {<<"server">>, <<"Python/3.12 websockets/12.0">>}]} = holster:ws_connect("ws:\/\/localhost:8765", #{}).
+
+ok = holster:ws_req(<0.167.0>, {text, <<"test">>}).
+
+```

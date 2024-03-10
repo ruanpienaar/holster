@@ -272,19 +272,19 @@ do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, Body, PidOrUndef) 
     end.
 
 parse_uri(URI) ->
-    % ParseOpts = [
-    %     {scheme_validation_fun, fun scheme_validation/1},
-    %     {fragment, true},
-    %     {scheme_defaults, [{ws, 80}, {wss, 443} | scheme_defaults()]}
-    % ],
-    case uri_string:parse(URI) of
-        {ok, {Scheme, UserInfo, Host, Port, Path, Query}} ->
-            {ok, {Scheme, UserInfo, Host, Port, Path, Query, ""}};
-        {ok, {Scheme, UserInfo, Host, Port, Path, Query, Fragment}} ->
-            {ok, {Scheme, UserInfo, Host, Port, Path, Query, Fragment}};
-        {error, Reason} ->
-            {error, Reason}
-    end.
+% 1> uri_string:parse("foo://user@example.com:8042/over/there?name=ferret#nose").
+% #{fragment => "nose",host => "example.com",
+%   path => "/over/there",port => 8042,query => "name=ferret",
+%   scheme => foo,userinfo => "user"}
+    URIMap = uri_string:parse(URI),
+    Scheme = maps:get(scheme, URIMap, undefined),
+    UserInfo = maps:get(user, URIMap, undefined),
+    Host = maps:get(host, URIMap, undefined),
+    Port = maps:get(port, URIMap, undefined),
+    Path = maps:get(path, URIMap, undefined),
+    Query = maps:get(query, URIMap, undefined),
+    Fragment = maps:get(fragment, URIMap, undefined),
+    {ok, {Scheme, UserInfo, Host, Port, Path, Query, Fragment}}.
 
 start_or_use(undefined, Host, Scheme, Port, ConnectOpts, Timeout, ConnType) ->
     {ok, _Pid} = holster_sm:start_link(
