@@ -276,6 +276,9 @@ do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, Body, PidOrUndef) 
             {response, Error}
     end.
 
+%% This binary case reduces the amount of duplicating ( string & binary in URIMap )
+parse_uri(URI) when is_binary(URI) ->
+    parse_uri(binary_to_list(URI));
 parse_uri(URI) ->
     URIMap = uri_string:parse(URI),
     Scheme = maps:get(scheme, URIMap, undefined),

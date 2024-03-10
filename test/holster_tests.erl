@@ -63,13 +63,19 @@ unit_test_() ->
     }.
 
 simple_proc_req() ->
-    XXX = holster:simple_proc_req(get, "http://localhost:8080/"),
-% ?debugFmt("X ~p\n", [XXX]),
     ?assertMatch(
         {response,{200,
              [{<<"content-length">>,<<"11">>},
               {<<"date">>,_},
               {<<"server">>,<<"Cowboy">>}],
              <<"dummy reply">>}},
-        XXX
+        holster:simple_proc_req(get, <<"http://localhost:8080/">>)
+    ),
+    ?assertMatch(
+        {response,{200,
+             [{<<"content-length">>,<<"11">>},
+              {<<"date">>,_},
+              {<<"server">>,<<"Cowboy">>}],
+             <<"dummy reply">>}},
+        holster:simple_proc_req(get, "http://localhost:8080/")
     ).
