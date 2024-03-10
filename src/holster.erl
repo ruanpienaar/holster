@@ -69,7 +69,8 @@
 ]).
 
 -export([
-    parse_uri/1
+    parse_uri/1,
+    convert_to_gun_friendly_scheme/1
 ]).
 
 % -export([
@@ -91,12 +92,18 @@ simple_proc_req(ReqType, URI, ConnectOpts, Headers) ->
     simple_proc_req(ReqType, URI, ConnectOpts, Headers, 120000).
 
 simple_proc_req(ReqType, URI, ConnectOpts, Headers, Timeout) ->
-    {ok, {Scheme, _UserInfo, Host, Port, Path, Query, Fragment}} = parse_uri(URI),
-    {ok, Pid} = holster_request:start_link(Host, Scheme, Port, ConnectOpts, Timeout),
+    {ok, URIMap} = parse_uri(URI),
+    {ok, Pid} = holster_request:start_link(
+        maps:get(host, URIMap),
+        maps:get(scheme, URIMap),
+        maps:get(port, URIMap),
+        ConnectOpts,
+        Timeout
+    ),
     _ = holster_request:req(
         Pid,
         ReqType,
-        combine_fragment({Path, Query, Fragment}),
+        uri_string:recompose(URIMap),
         Headers,
         ConnectOpts,
         Timeout
@@ -108,12 +115,19 @@ simple_proc_req(ReqType, URI, ConnectOpts, Headers, Timeout) ->
 
 % returns: {Status, RespHeaders, <<Data/binary>>, TimesMap}
 simple_proc_req_timed(ReqType, URI, ConnectOpts, Headers, Timeout) ->
-    {ok, {Scheme, _UserInfo, Host, Port, Path, Query, Fragment}} = parse_uri(URI),
-    {ok, Pid} = holster_request:start_link(Host, Scheme, Port, ConnectOpts, Timeout, timed),
+    {ok, URIMap} = parse_uri(URI),
+    {ok, Pid} = holster_request:start_link(
+        maps:get(host, URIMap),
+        maps:get(scheme, URIMap),
+        maps:get(port, URIMap),
+        ConnectOpts,
+        Timeout,
+        timed
+    ),
     _ = holster_request:req_timed(
         Pid,
         ReqType,
-        combine_fragment({Path, Query, Fragment}),
+        uri_string:recompose(URIMap),
         Headers,
         ConnectOpts,
         Timeout
@@ -125,12 +139,19 @@ simple_proc_req_timed(ReqType, URI, ConnectOpts, Headers, Timeout) ->
 
 % returns: {Status, RespHeaders, <<Data/binary>>, TimesMap}
 simple_proc_req_timed(ReqType, URI, ConnectOpts, Headers, Timeout, Body) ->
-    {ok, {Scheme, _UserInfo, Host, Port, Path, Query, Fragment}} = parse_uri(URI),
-    {ok, Pid} = holster_request:start_link(Host, Scheme, Port, ConnectOpts, Timeout, timed),
+    {ok, URIMap} = parse_uri(URI),
+    {ok, Pid} = holster_request:start_link(
+        maps:get(host, URIMap),
+        maps:get(scheme, URIMap),
+        maps:get(port, URIMap),
+        ConnectOpts,
+        Timeout,
+        timed
+    ),
     _ = holster_request:req_timed(
         Pid,
         ReqType,
-        combine_fragment({Path, Query, Fragment}),
+        uri_string:recompose(URIMap),
         Headers,
         ConnectOpts,
         Timeout,
@@ -231,10 +252,17 @@ ws_connect(URI, ConnectOpts) ->
     ws_connect(URI, ConnectOpts, default_ws_timeouts(), [], #{}).
 
 ws_connect(URI, ConnectOpts, Timeouts, WsUpgradeHeaders, WsUpgradeOpts) ->
-    {ok, {Proto, _UserInfo, Host, Port, WsPath, _Query, _Fragment}} =
-        parse_uri(URI),
+    {ok, URIMap} = parse_uri(URI),
     {ok, Pid} = holster_ws:start_link(
-        Host, Proto, Port, ConnectOpts, WsPath, Timeouts, WsUpgradeHeaders, WsUpgradeOpts),
+        maps:get(host, URIMap),
+        maps:get(scheme, URIMap),
+        maps:get(port, URIMap),
+        ConnectOpts,
+        maps:get(path, URIMap),
+        Timeouts,
+        WsUpgradeHeaders,
+        WsUpgradeOpts
+    ),
     case holster_ws:ws_upgrade(Pid) of
         {ws_upgraded, WsHeaders} ->
             {ok, Pid, WsHeaders};
@@ -267,12 +295,12 @@ do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, Body) ->
 
 do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, Body, PidOrUndef) ->
     case parse_uri(URI) of
-        {ok, {Scheme, _UserInfo, Host, Port, Path, Query, Fragment}} ->
+        {ok, URIMap} ->
             {ok, Pid} = start_or_get_pid(
                 PidOrUndef,
-                Host,
-                Scheme,
-                Port,
+                maps:get(host, URIMap),
+                maps:get(scheme, URIMap),
+                maps:get(port, URIMap),
                 ConnectOpts,
                 undefined,
                 ConnType
@@ -282,7 +310,7 @@ do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, Body, PidOrUndef) 
                 holster_sm:req(
                     Pid,
                     ReqType,
-                    combine_fragment({Path, Query, Fragment}),
+                    uri_string:recompose(URIMap),
                     Headers,
                     ReqOpts,
                     Body
@@ -298,18 +326,11 @@ parse_uri(URI) when is_binary(URI) ->
 parse_uri(URI) ->
     URIMap = uri_string:parse(URI),
     Scheme = maps:get(scheme, URIMap, undefined),
-    case gun_friendly_scheme(Scheme) of
+    case check_gun_friendly_scheme(Scheme) of
         {error, unsupported_scheme} ->
             {error, unsupported_scheme};
-        GunFriendlyScheme ->
-            URIMapWithDefaults = get_defaults(URIMap#{scheme => GunFriendlyScheme}),
-            UserInfo = maps:get(user, URIMapWithDefaults, ""),
-            Host = maps:get(host, URIMapWithDefaults, ""),
-            Port = maps:get(port, URIMapWithDefaults, ""),
-            Path = maps:get(path, URIMapWithDefaults, ""),
-            Query = maps:get(query, URIMapWithDefaults, ""),
-            Fragment = maps:get(fragment, URIMapWithDefaults, ""),
-            {ok, {GunFriendlyScheme, UserInfo, Host, Port, Path, Query, Fragment}}
+        ok ->
+            {ok, add_default_port(URIMap)}
     end.
 
 start_or_get_pid(undefined, Host, Scheme, Port, ConnectOpts, Timeout, ConnType) ->
@@ -324,15 +345,40 @@ start_or_get_pid(undefined, Host, Scheme, Port, ConnectOpts, Timeout, ConnType) 
 start_or_get_pid(Pid, _, _, _, _, _, _) ->
     {ok, Pid}.
 
-get_defaults(URIMap) ->
+add_default_port(URIMap) ->
     Scheme = maps:get(scheme, URIMap, undefined),
-    Defaults = #{
-        port => scheme_defaults(Scheme),
-        query => ""
-    },
-    maps:merge(URIMap, Defaults).
+    Defaults = #{ port => scheme_defaults(Scheme) },
+    maps:merge(Defaults, URIMap).
 
-gun_friendly_scheme(Scheme) when is_list(Scheme) ->
+close_req(Pid) ->
+    holster_sm:close(Pid).
+
+scheme_defaults("http") ->
+    80;
+scheme_defaults("ws") ->
+    80;
+scheme_defaults("https") ->
+    443;
+scheme_defaults("wss") ->
+    443;
+scheme_defaults("ftp") ->
+    21;
+scheme_defaults("ssh") ->
+    22;
+scheme_defaults("sftp") ->
+    22;
+scheme_defaults("tftp") ->
+    69.
+
+check_gun_friendly_scheme(Scheme) when is_list(Scheme) ->
+    case convert_to_gun_friendly_scheme(Scheme) of
+        {error, Reason} ->
+            {error, Reason};
+        _GunFriendlyScheme ->
+            ok
+    end.
+
+convert_to_gun_friendly_scheme(Scheme) when is_list(Scheme) ->
     try
         %% Atoms are created in holster_sup
         erlang:list_to_existing_atom(Scheme)
@@ -340,22 +386,3 @@ gun_friendly_scheme(Scheme) when is_list(Scheme) ->
         _:_:_ ->
             {error, unsupported_scheme}
     end.
-
-combine_fragment({Path, Query, Fragment}) ->
-    Path ++ Query ++ Fragment.
-
-close_req(Pid) ->
-    holster_sm:close(Pid).
-
-scheme_defaults(http) ->
-    80;
-scheme_defaults(https) ->
-    443;
-scheme_defaults(ftp) ->
-    21;
-scheme_defaults(ssh) ->
-    22;
-scheme_defaults(sftp) ->
-    22;
-scheme_defaults(tftp) ->
-    69.

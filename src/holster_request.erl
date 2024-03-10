@@ -29,7 +29,7 @@ start_link(Host, Proto, Port, ConnectOpts, Timeout) ->
         connect(#{
             timed => false,
             host => Host,
-            proto => Proto,
+            proto => holster:convert_to_gun_friendly_scheme(Proto),
             port => Port,
             connectOpts => ConnectOpts,
             timeout => Timeout

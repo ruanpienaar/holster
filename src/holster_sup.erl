@@ -23,5 +23,7 @@ create_connection_proto_atoms() ->
         ftp,
         ssh,
         sftp,
-        tftp
+        tftp,
+        ws,
+        wss
     ].
