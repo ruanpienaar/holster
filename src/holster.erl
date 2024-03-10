@@ -310,8 +310,6 @@ get_defaults(URIMap) ->
     },
     maps:merge(URIMap, Defaults).
 
-gun_friendly_scheme(Scheme) when is_binary(Scheme) ->
-    erlang:binary_to_list(gun_friendly_scheme(Scheme));
 gun_friendly_scheme(Scheme) when is_list(Scheme) ->
     try
         %% Atoms are created in holster_sup
