@@ -60,6 +60,7 @@
     another_request/3,
     another_request/4,
     another_request/5,
+    another_request/6,
     ws_connect/2,
     ws_connect/5,
     ws_req/2,
@@ -203,20 +204,27 @@ stay_connected_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, Body) ->
 stay_connected_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, Body, Pid) ->
     do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, stay_connected, Body, Pid).
 
+
+
 -spec another_request(req_type(), uri_string:uri_string(), pid())
         -> {{ok, pid()}, {response, term()}}.
 another_request(ReqType, URI, Pid) ->
-    do_req(ReqType, URI, #{}, [], #{}, stay_connected, Pid).
+    do_req(ReqType, URI, _ConnectOpts=#{}, _Header=[], _ReqOpts=#{}, stay_connected, _Body=undefined, Pid).
+
+another_request(ReqType, URI, Pid, Headers) ->
+    do_req(ReqType, URI, _ConnectOpts=#{}, Headers, _ReqOpts=#{}, stay_connected, _Body=undefined, Pid).
 
 -spec another_request(req_type(), uri_string:uri_string(), gun:req_headers(), pid())
         -> {{ok, pid()}, {response, term()}}.
-another_request(ReqType, URI, Headers, Pid) ->
-    do_req(ReqType, URI, #{}, Headers, #{}, stay_connected, Pid).
+another_request(ReqType, URI, Pid, Headers, Body) ->
+    do_req(ReqType, URI, _ConnectOpts=#{}, Headers, _ReqOpts=#{}, stay_connected, Body, Pid).
 
 -spec another_request(req_type(), uri_string:uri_string(), gun:req_headers(), gun:req_opts(), pid())
         -> {{ok, pid()}, {response, term()}}.
-another_request(ReqType, URI, Headers, ReqOpts, Pid) ->
-    do_req(ReqType, URI, #{}, Headers, ReqOpts, stay_connected, Pid).
+another_request(ReqType, URI, Pid, Headers, Body, ReqOpts) ->
+    do_req(ReqType, URI, _ConnectOpts=#{}, Headers, ReqOpts, stay_connected, Body, Pid).
+
+
 
 -spec ws_connect(uri_string:uri_string(), gun:opts()) -> {ok, pid(), gun:resp_headers()} | {error, {ws_upgrade, timeout}}.
 ws_connect(URI, ConnectOpts) ->
@@ -260,7 +268,15 @@ do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, Body) ->
 do_req(ReqType, URI, ConnectOpts, Headers, ReqOpts, ConnType, Body, PidOrUndef) ->
     case parse_uri(URI) of
         {ok, {Scheme, _UserInfo, Host, Port, Path, Query, Fragment}} ->
-            {ok, Pid} = start_or_use(PidOrUndef, Host, Scheme, Port, ConnectOpts, undefined, ConnType),
+            {ok, Pid} = start_or_get_pid(
+                PidOrUndef,
+                Host,
+                Scheme,
+                Port,
+                ConnectOpts,
+                undefined,
+                ConnType
+            ),
             {
                 {ok, Pid},
                 holster_sm:req(
@@ -296,10 +312,16 @@ parse_uri(URI) ->
             {ok, {GunFriendlyScheme, UserInfo, Host, Port, Path, Query, Fragment}}
     end.
 
-start_or_use(undefined, Host, Scheme, Port, ConnectOpts, Timeout, ConnType) ->
+start_or_get_pid(undefined, Host, Scheme, Port, ConnectOpts, Timeout, ConnType) ->
     {ok, _Pid} = holster_sm:start_link(
-        Host, Scheme, Port, ConnectOpts, Timeout, ConnType);
-start_or_use(Pid, _, _, _, _, _, _) ->
+        Host,
+        Scheme,
+        Port,
+        ConnectOpts,
+        Timeout,
+        ConnType
+    );
+start_or_get_pid(Pid, _, _, _, _, _, _) ->
     {ok, Pid}.
 
 get_defaults(URIMap) ->

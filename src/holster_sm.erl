@@ -6,14 +6,12 @@
 %% API
 -export([
     start_link/6,
-    % req/5,
     req/6,
     close/1
 ]).
 
 -behaviour(gen_statem).
 
-%% gen_statem callbacks
 -export([
     callback_mode/0,
     init/1,
@@ -25,9 +23,6 @@
     connected/3,
     in_request/3
 ]).
-
-
-%% ============================================================================
 
 %% TODO:
 %% - scheme - handle and check that once connected it matches up.
@@ -58,8 +53,17 @@ start_link(Host, Proto, Port, ConnectOpts, Timeout, ConnType) when is_map(Connec
 % req(Pid, ReqType, URI, Headers, ReqOpts) when is_map(ReqOpts) ->
 %     gen_statem:call(Pid, {req, ReqType, URI, Headers, ReqOpts}).
 
--spec req(pid(), holster:req_type(), uri_string:uri_string(), gun:req_headers(), gun:req_opts(), undefined | binary()) -> {response, term()}.
-req(Pid, ReqType, URI, Headers, ReqOpts, Body) when is_map(ReqOpts) andalso (Body == undefined orelse is_binary(Body)) ->
+-spec req(
+        pid(),
+        holster:req_type(),
+        uri_string:uri_string(),
+        gun:req_headers(),
+        gun:req_opts(),
+        undefined | binary()
+    ) -> {response, term()}.
+req(Pid, ReqType, URI, Headers, ReqOpts, Body)
+        when is_map(ReqOpts) andalso
+        (Body == undefined orelse is_binary(Body)) ->
     gen_statem:call(Pid, {req, ReqType, URI, Headers, ReqOpts, Body}).
 
 close(Pid) ->
@@ -73,50 +77,52 @@ callback_mode() ->
 
 -spec init(Args :: term()) -> gen_statem:init_result(term()).
 init({Host, Proto, Port, ConnectOpts, Timeout, ConnType}) ->
-    process_flag(trap_exit, true),
-    % {ok, _} = dbg:tracer(),
-    % {ok, _} = dbg:p(all, call),
-    % {ok, _} = dbg:tpl(gun, cx),
-    {ok, open, #{
-        body => undefined,
-        scheme => undefined,
+    _ = process_flag(trap_exit, true),
+    {ok, open, initial_sm_data(Host, Proto, Port, ConnectOpts, Timeout, ConnType)}.
+
+initial_sm_data(Host, Proto, Port, ConnectOpts, Timeout, ConnType) ->
+    (initial_sm_data_defaults())#{
+        conn_type => ConnType,
+        connect_opts => ConnectOpts,
         host => Host,
-        req_uri => undefined,
-        req_type => undefined,
+        port => Port,
+        proto => Proto,
+        timeout => Timeout
+    }.
+
+initial_sm_data_defaults() ->
+    #{
+        body => undefined,
+        client_from => undefined,
+        conn_m_ref => undefined,
+        conn_pid => undefined,
         req_headers => [],
         req_opts => #{},
-        proto => Proto,
-        port => Port,
-        connect_opts => ConnectOpts,
-        timeout => Timeout,
-        conn_type => ConnType,
-        conn_pid => undefined,
-        stream_ref => undefined,
-        client_from => undefined,
-        response_status => undefined,
-        response_headers => undefined,
+        req_type => undefined,
+        req_uri => undefined,
         response_data => <<>>,
-        conn_m_ref => undefined,
-        stop_reason => undefined
-    }}.
+        response_headers => undefined,
+        response_status => undefined,
+        scheme => undefined,
+        stop_reason => undefined,
+        stream_ref => undefined
+    }.
 
 % -spec open
 %     ('enter', OldState :: atom(), Data :: term())
 %         -> gen_statem:state_enter_result('open');
 %     (gen_statem:event_type(), Msg :: term(), Data :: term())
 %         -> gen_statem:event_handler_result(atom()).
-
 open(enter, connected = PrevState, _Data) ->
-    %% For some reason GUN considers it nice to try and reconnect in the background
-    ?LOG_DEBUG("~p -> ENTER PrevState ~p", [?FUNCTION_NAME, PrevState]),
+    %% TODO: Something is making long running connetions disconnect and reconnect.
     keep_state_and_data;
 open(enter, open = PrevState, #{
         scheme := undefined,
         host := Host,
         port := Port,
         connect_opts := ConnectOpts,
-        conn_pid := undefined } = Data) ->
-    ?LOG_DEBUG("~p -> ENTER PrevState ~p", [?FUNCTION_NAME, PrevState]),
+        conn_pid := undefined } = Data
+    ) ->
     case gun:open(Host, Port, ConnectOpts) of
         {ok, ConnPid} ->
             MRef = monitor(process, ConnPid),
@@ -129,51 +135,42 @@ open(enter, open = PrevState, #{
     end;
 open({call, From}, {req, ReqType, URI, Headers, ReqOpts, Body}, Data) ->
     %% NB! postpone until connected
-    ?LOG_DEBUG("~p({call, ~p}, ~p, POSTPONE!", [?FUNCTION_NAME, From, {req, ReqType, URI, Headers, ReqOpts, Body}]),
+    ?LOG_DEBUG(#{
+        state => ?FUNCTION_NAME,
+        postponing_request => {req, ReqType, URI, Headers, ReqOpts, Body}
+    }),
     {keep_state, Data#{ client_from => From, body => Body }, [postpone]};
-% open(cast, Msg, Data) ->
-%     ?LOG_INFO("~p(cast, ~p, ", [?FUNCTION_NAME, Msg]),
-%     {next_state, open, Data};
 %% When we connect first time
 open(info, {gun_up, ConnPid, Scheme}, #{
         conn_pid := ConnPid,
         scheme := _Scheme } = Data) ->
-    ?LOG_DEBUG("~p -> gun_up(first time)", [?FUNCTION_NAME]),
     {next_state, connected, Data#{ scheme => Scheme }};
 %% When gun reconnects in the background
 open(info, {gun_up, ConnPid, Scheme}, #{
         conn_pid := undefined,
         scheme := undefined } = Data) ->
-    ?LOG_DEBUG("~p -> gun_up(reconnect)", [?FUNCTION_NAME]),
     {next_state, connected, Data#{
         conn_pid => ConnPid,
         scheme => Scheme
     }};
 open(info, {'DOWN', MRef, process, ConnPid, Reason}, #{
         conn_m_ref := MRef,
-        client_from := From } = Data) ->
-    case From of
-        undefined ->
-            {stop, normal, Data#{ stop_reason => {'DOWN', ConnPid}}};
-        _ ->
-            {stop_and_reply, normal, [{reply, From, {response, Reason}}]}
-    end.
-% open(info, Msg, Data) ->
-%     ?LOG_INFO("~p(info, ~p, ", [?FUNCTION_NAME, Msg]),
-%     {next_state, open, Data}.
+        client_from := undefined } = Data) ->
+    {stop, normal, Data#{ stop_reason => {'DOWN', ConnPid}}};
+open(info, {'DOWN', MRef, process, ConnPid, Reason}, #{
+        conn_m_ref := MRef,
+        client_from := From } = Data) when From =/= undefined -> %% TODO: check what type is From
+    {stop_and_reply, normal, [{reply, From, {response, Reason}}]}.
 
 connected(enter, PrevState, #{
         conn_pid := ConnPid,
         scheme := Scheme } = _Data)
         when (ConnPid =/= undefined andalso Scheme =/= undefined) andalso
              (PrevState =/= open orelse PrevState =/= in_request) ->
-    ?LOG_DEBUG("~p -> ENTER PrevState ~p", [?FUNCTION_NAME, PrevState]),
     keep_state_and_data;
 connected({call, From},
           {req, ReqType, URI, Headers, ReqOpts, Body},
           #{ conn_type := ConnType } = Data) ->
-    ?LOG_DEBUG("~p({call, ~p}, ~p ~p, ",
-        [?FUNCTION_NAME, From, ConnType, {req, ReqType, URI, Headers, ReqOpts}]),
     {next_state, in_request, Data#{
         body => Body,
         req_uri => URI,
@@ -182,21 +179,12 @@ connected({call, From},
         req_opts => ReqOpts,
         client_from => From
     }};
-% connected(cast, Msg, Data) ->
-%     ?LOG_INFO("~p(cast, ~p, ", [?FUNCTION_NAME, Msg]),
-%     {next_state, connected, Data};
 connected(info, {gun_down, ConnPid, _Scheme, Reason, _}, #{
         conn_pid := ConnPid,
         conn_type := once,
         stream_ref := StreamRef,
         client_from := undefined } = Data) ->
-    ?LOG_DEBUG("~p -> gun_down ~p", [?FUNCTION_NAME, Reason]),
-    case StreamRef of
-        undefined ->
-            ok;
-        _ ->
-            ok = gun:cancel(ConnPid, StreamRef)
-    end,
+    ok = cancel_stream_ref_if_present(ConnPid, StreamRef),
     ok = gun:shutdown(ConnPid),
     {stop, normal, Data#{
         conn_pid => undefined,
@@ -221,13 +209,6 @@ connected(info, {gun_down, ConnPid, _Scheme, Reason, _}, #{
         stream_ref := undefined,
         scheme => undefined
     }}.
-% connected(info, {gun_up, ConnPid, Scheme},
-%         #{ conn_pid := ConnPid } = Data) ->
-%     ?LOG_DEBUG("~p -> gun_up", [?FUNCTION_NAME]),
-%     {next_state, connected, Data#{ scheme => Scheme }};
-% connected(info, Msg, Data) ->
-%     ?LOG_INFO("~p(info, ~p, ", [?FUNCTION_NAME, Msg]),
-%     {next_state, connected, Data}.
 
 % -spec in_request('enter',
 %          OldState :: atom(),
@@ -254,15 +235,10 @@ in_request(enter, connected = PrevState, #{
                 gun:post(ConnPid, URI, Headers, Body)
         end,
     {keep_state, Data#{ stream_ref => StreamRef }};
-% in_request({call, From}, _Msg, State) ->
-%     {next_state, in_request, State, [{reply, From, ok}]};
-% in_request(cast, _Msg, State) ->
-%     {next_state, in_request, State};
 in_request(info, {gun_down, ConnPid, _Scheme, Reason, _}, #{
         conn_pid := ConnPid,
         stream_ref := StreamRef,
         client_from := From } = Data) when From =/= undefind ->
-    ?LOG_DEBUG("~p -> gun_down ~p", [?FUNCTION_NAME, Reason]),
     ok = gun:cancel(ConnPid, StreamRef),
     {next_state, open, Data#{
         conn_pid => undefined,
@@ -274,7 +250,6 @@ in_request(info, {gun_down, ConnPid, _Scheme, Reason, _}, #{
 in_request(info, {gun_response, ConnPid, _StreamRef, nofin, Status, RespHeaders}, #{
         conn_pid := ConnPid } = Data) ->
     %% TODO: should we re-set StreamRef or check it ??
-    ?LOG_DEBUG("~p -> gun_response ~p", [?FUNCTION_NAME, nofin]),
     %% After {gun_response, nofin} we get the actual `{gun_data, fin/nofin}` resonse
     {keep_state, Data#{
         response_status => Status,
@@ -286,11 +261,9 @@ in_request(info, {gun_response, ConnPid, _StreamRef, fin, Status, RespHeaders}, 
         client_from := From,
         conn_pid := ConnPid } = _Data) ->
     %% TODO: should we re-set StreamRef or check it ??
-    ?LOG_DEBUG("~p -> gun_response ~p Type ~p", [?FUNCTION_NAME, fin, once]),
     %% response likely non 200 or error
     ReqResp = {Status, RespHeaders, _ResponseData = <<>>},
     ok = gun:shutdown(ConnPid),
-    ?LOG_DEBUG("stop once request", []),
     {stop_and_reply, normal, [{reply, From, {response, ReqResp}}]};
 % Handle stay_connected request response by responding and staying open
 in_request(info, {gun_response, ConnPid, _StreamRef, fin, Status, RespHeaders}, #{
@@ -298,7 +271,6 @@ in_request(info, {gun_response, ConnPid, _StreamRef, fin, Status, RespHeaders}, 
         client_from := From,
         conn_pid := ConnPid } = Data) ->
     %% TODO: should we re-set StreamRef or check it ??
-    ?LOG_DEBUG("~p -> gun_response ~p Type ~p", [?FUNCTION_NAME, fin, stay_connected]),
     ReqResp = {Status, RespHeaders, _ResponseData = <<>>},
     {next_state, connected, Data#{
         req_uri => undefined,
@@ -317,7 +289,6 @@ in_request(info, {gun_data, ConnPid, _StreamRef, fin, ResponseData}, #{
         response_headers := RespHeaders,
         response_data := ExistingResponsedata } = Data) ->
     %% TODO: should we re-set StreamRef or check it ??
-    ?LOG_DEBUG("~p -> gun_response ~p Type ~p", [?FUNCTION_NAME, fin, stay_connected]),
     ReqResp = {Status, RespHeaders, <<ExistingResponsedata/binary, ResponseData/binary>>},
     {next_state, connected, Data#{
         req_uri => undefined,
@@ -335,19 +306,25 @@ in_request(info, {gun_data, ConnPid, _StreamRef, nofin, ResponseData}, #{
     {keep_state, Data#{
         response_data => <<ExistingResponsedata/binary, ResponseData/binary>>
     }}.
-% in_request(info, _Msg, State) ->
-%     {next_state, in_request, State}.
 
 terminate(_Reason, _StateName, #{
         conn_pid := _ConnPid,
         stream_ref := _StreamRef,
-        client_from := _From } = _Data) ->
-
+        client_from := _From,
+        stop_reason := StopReason } = _Data
+    ) ->
+    ?LOG_INFO(#{
+        stopping => ?MODULE,
+        stop_reason => StopReason
+    }),
     %% TODO: should we cleanup ? is it not done elsewhere ?
-
     %% TODO: cancel andor shutdown/close connection
-
     void.
 
 code_change(_OldVsn, StateName, Data, _Extra) ->
     {ok, StateName, Data}.
+
+cancel_stream_ref_if_present(_ConnPid, undefined) ->
+    ok;
+cancel_stream_ref_if_present(ConnPid, StreamRef) ->
+    ok = gun:cancel(ConnPid, StreamRef).

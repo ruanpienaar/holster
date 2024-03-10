@@ -12,8 +12,19 @@ unit_test_() ->
         setup,
         fun() ->
             _ = error_logger:tty(false),
-            {ok, Apps} = application:ensure_all_started(cowboy),
-            {ok, Apps2} = application:ensure_all_started(gun),
+            AppsStruct1 = application:ensure_all_started(cowboy),
+            ?assertEqual(
+                {ok,[cowlib,ranch,cowboy]},
+                AppsStruct1
+            ),
+            AppsStruct2 = application:ensure_all_started(holster),
+            ?debugFmt("AppsStruct2 ~p\n", [AppsStruct2]),
+            ?assertEqual(
+                {ok,[gun,jsx,holster]},
+                AppsStruct2
+            ),
+            {ok, Apps} = AppsStruct1,
+            {ok, Apps2} = AppsStruct2,
             _ = error_logger:tty(true),
             Dispatch = cowboy_router:compile([
                 {'_', [
@@ -58,7 +69,9 @@ unit_test_() ->
             )
         end,
         [
-            {timeout, 50000000, {"simple_proc_req", fun simple_proc_req/0}}
+            {timeout, 50000000, {"simple_proc_req", fun simple_proc_req/0}},
+            {timeout, 50000000, {"req", fun req/0}},
+            {timeout, 50000000, {"stay_connected_req", fun stay_connected_req/0}}
         ]
     }.
 
@@ -78,4 +91,51 @@ simple_proc_req() ->
               {<<"server">>,<<"Cowboy">>}],
              <<"dummy reply">>}},
         holster:simple_proc_req(get, "http://localhost:8080/")
+    ).
+
+req() ->
+    ?assertMatch(
+        {response,{200,
+             [{<<"content-length">>,<<"11">>},
+              {<<"date">>,_},
+              {<<"server">>,<<"Cowboy">>}],
+             <<"dummy reply">>}},
+        holster:req(get, <<"http://localhost:8080/">>)
+    ),
+    ?assertMatch(
+        {response,{200,
+             [{<<"content-length">>,<<"11">>},
+              {<<"date">>,_},
+              {<<"server">>,<<"Cowboy">>}],
+             <<"dummy reply">>}},
+        holster:req(get, "http://localhost:8080/")
+    ).
+
+stay_connected_req() ->
+    {{ok, Pid}, Response} = holster:stay_connected_req(get, "http://localhost:8080/"),
+    ?assertMatch(
+        {response,{200,
+             [{<<"content-length">>,<<"11">>},
+              {<<"date">>,_},
+              {<<"server">>,<<"Cowboy">>}],
+             <<"dummy reply">>}},
+        Response
+    ),
+    {{ok, Pid}, Response} = holster:another_request(get, "http://localhost:8080/", Pid),
+    ?assertMatch(
+        {response,{200,
+             [{<<"content-length">>,<<"11">>},
+              {<<"date">>,_},
+              {<<"server">>,<<"Cowboy">>}],
+             <<"dummy reply">>}},
+        Response
+    ),
+    {{ok, Pid}, Response} = holster:another_request(get, "http://localhost:8080/", Pid),
+    ?assertMatch(
+        {response,{200,
+             [{<<"content-length">>,<<"11">>},
+              {<<"date">>,_},
+              {<<"server">>,<<"Cowboy">>}],
+             <<"dummy reply">>}},
+        Response
     ).
