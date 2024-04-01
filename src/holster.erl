@@ -26,7 +26,6 @@
 %% @end
 
 
-
 -include_lib("kernel/include/logger.hrl").
 
 -type req_type() :: get | head | options | patch | post | put.
@@ -41,12 +40,15 @@
 ]).
 
 -export([
+    % func/0, func2/0,
+    basic_auth_request/6, %% TODO: gen boiler plate /5 /4 /3 /2
     simple_proc_req/2,
     simple_proc_req/3,
     simple_proc_req/4,
     simple_proc_req/5,
-    simple_proc_req_timed/5,
+    simple_proc_req/6,
     simple_proc_req_timed/6,
+    simple_proc_req_timed/7,
     req/2,
     req/3,
     req/4,
@@ -73,6 +75,10 @@
     convert_to_gun_friendly_scheme/1
 ]).
 
+-ifdef(TEST).
+-compile(export_all).
+-endif.
+
 % -export([
 %     test/0,
 %     once_test/0,
@@ -82,17 +88,135 @@
 %% TODO:
 %% - Userinfo not done/tested yet. user:passwd@host.com
 
+% func() ->
+%     application:ensure_all_started(cowboy),
+%     application:ensure_all_started(holster),
+%     Dispatch = cowboy_router:compile([
+%         {'_', [
+%             {"/auth-endpoint", holster_basic_auth_webserver, []}
+%         ]}
+%     ]),
+%     % ?debugFmt("~p\n", [file:read_file("test/ssl/cert.pem")]),
+%     % ?debugFmt("~p\n", [file:read_file("test/ssl/key.pem")]),
+%     {ok, _Pid} = cowboy:start_clear(
+%         https,
+%         _TransOpts=[
+%             {port, 8000}
+%         ],
+%         _ProtoOpts=#{
+%             env => #{dispatch => Dispatch}
+%         }
+%     ).
+
+% func2() ->
+%     % http://user:password@domain.com/
+%     Url = "http://Alladin:open_sesame@localhost:8000/auth-endpoint",
+%     {ok, URIMap} = parse_uri(Url),
+%     Headers = 
+%         case maps:get(userinfo, URIMap, undefined) of
+%             undefined ->
+%                 ok;
+%             UserInfo ->
+%                 EncodedUserInfo = base64:encode(UserInfo, #{ mode => urlsafe }),
+%                 [
+%                     {
+%                         <<"authorization">>,
+%                         binary:list_to_bin([<<"Basic ">>, EncodedUserInfo])
+%                     }
+%                 ]
+%         end,
+%     application:ensure_all_started(holster),
+%     simple_proc_req(
+%         get,
+%         Url,
+%         #{},
+%         #{},
+%         Headers
+%     ).
+
+% func2() ->
+%     % holster:simple_proc_req(get, "https://localhost:8443/api", #{tls_opts => [{verify, verify_none}]}).
+%     ConnectOpts = #{tls_opts => [{verify, verify_none}]},
+%     URI = "https://localhost:8443/api",
+%     Timeout=120000,
+%     Headers = [],
+%     ReqOpts = #{},
+%     {ok, URIMap} = parse_uri(URI),
+%     {ok, Pid} = holster_request:start_link(
+%         maps:get(host, URIMap),
+%         maps:get(scheme, URIMap),
+%         maps:get(port, URIMap),
+%         ConnectOpts,
+%         Timeout
+%     ),
+%     _ = holster_request:req(
+%         Pid,
+%         get,
+%         maps:get(path, URIMap),
+%         Headers,
+%         ReqOpts,
+%         Timeout
+%     ).
+
+basic_auth_request(ReqType, URI, ConnectOpts, ReqOpts, Headers, Timeout) ->
+    {ok, URIMap} = parse_uri(URI),
+    simple_proc_req(
+        ReqType,
+        URI,
+        ConnectOpts,
+        ReqOpts,
+        _Headers2 = lists:append(
+            base64_encoded_user_info_header_field(URIMap),
+            Headers
+        ),
+        Timeout,
+        URIMap
+    ).
+
+base64_encoded_user_info_header_field(URIMap) when is_map(URIMap) ->
+    base64_encoded_user_info_header_field(get_uri_user_info(URIMap));
+base64_encoded_user_info_header_field(undefined) ->
+    [];
+base64_encoded_user_info_header_field(UserInfo) 
+        when is_list(UserInfo) orelse is_binary(UserInfo) ->
+    [
+        {
+            <<"authorization">>,
+            binary:list_to_bin([
+                <<"Basic ">>, 
+                base64:encode(UserInfo, #{ mode => urlsafe })
+            ])
+        }
+    ].
+
+get_uri_user_info(URIMap) ->
+    maps:get(userinfo, URIMap, undefined).
+
 simple_proc_req(ReqType, URI) ->
-    simple_proc_req(ReqType, URI, #{}, [], 120000).
+    simple_proc_req(ReqType, URI, _ConnectOpts=#{}, _ReqOpts=#{}, _Headers=[], _Timeout=120000).
 
 simple_proc_req(ReqType, URI, ConnectOpts) ->
-    simple_proc_req(ReqType, URI, ConnectOpts, [], 120000).
+    simple_proc_req(ReqType, URI, ConnectOpts, _ReqOpts=#{}, _Headers=[], _Timeout=120000).
 
-simple_proc_req(ReqType, URI, ConnectOpts, Headers) ->
-    simple_proc_req(ReqType, URI, ConnectOpts, Headers, 120000).
+simple_proc_req(ReqType, URI, ConnectOpts, ReqOpts) ->
+    simple_proc_req(ReqType, URI, ConnectOpts, ReqOpts, _Headers=[], _Timeout=120000).
 
-simple_proc_req(ReqType, URI, ConnectOpts, Headers, Timeout) ->
+simple_proc_req(ReqType, URI, ConnectOpts, ReqOpts, Headers) ->
+    simple_proc_req(ReqType, URI, ConnectOpts, ReqOpts, Headers, 120000).
+
+%% TODO: Add RequestOpts
+% FROM gun.erl
+% -type req_opts() :: #{
+%     flow => pos_integer(),
+%     reply_to => pid(),
+%     tunnel => stream_ref()
+% }.
+
+simple_proc_req(ReqType, URI, ConnectOpts, ReqOpts, Headers, Timeout) ->
     {ok, URIMap} = parse_uri(URI),
+    simple_proc_req(ReqType, URI, ConnectOpts, ReqOpts, Headers, Timeout, URIMap).
+
+simple_proc_req(ReqType, _URI, ConnectOpts, ReqOpts, Headers, Timeout, URIMap) ->
     {ok, Pid} = holster_request:start_link(
         maps:get(host, URIMap),
         maps:get(scheme, URIMap),
@@ -103,18 +227,21 @@ simple_proc_req(ReqType, URI, ConnectOpts, Headers, Timeout) ->
     _ = holster_request:req(
         Pid,
         ReqType,
-        uri_string:recompose(URIMap),
+        prep_partial_uri(URIMap),
         Headers,
-        ConnectOpts,
+        ReqOpts,
         Timeout
     ),
     receive
         A ->
             {response, A}
+    after
+        60000 ->
+            {error, {?FUNCTION_NAME, timeout}}
     end.
 
 % returns: {Status, RespHeaders, <<Data/binary>>, TimesMap}
-simple_proc_req_timed(ReqType, URI, ConnectOpts, Headers, Timeout) ->
+simple_proc_req_timed(ReqType, URI, ConnectOpts, ReqOpts, Headers, Timeout) ->
     {ok, URIMap} = parse_uri(URI),
     {ok, Pid} = holster_request:start_link(
         maps:get(host, URIMap),
@@ -127,9 +254,9 @@ simple_proc_req_timed(ReqType, URI, ConnectOpts, Headers, Timeout) ->
     _ = holster_request:req_timed(
         Pid,
         ReqType,
-        uri_string:recompose(URIMap),
+        prep_partial_uri(URIMap),
         Headers,
-        ConnectOpts,
+        ReqOpts,
         Timeout
     ),
     receive
@@ -138,7 +265,7 @@ simple_proc_req_timed(ReqType, URI, ConnectOpts, Headers, Timeout) ->
     end.
 
 % returns: {Status, RespHeaders, <<Data/binary>>, TimesMap}
-simple_proc_req_timed(ReqType, URI, ConnectOpts, Headers, Timeout, Body) ->
+simple_proc_req_timed(ReqType, URI, ConnectOpts, ReqOpts, Headers, Timeout, Body) ->
     {ok, URIMap} = parse_uri(URI),
     {ok, Pid} = holster_request:start_link(
         maps:get(host, URIMap),
@@ -151,9 +278,9 @@ simple_proc_req_timed(ReqType, URI, ConnectOpts, Headers, Timeout, Body) ->
     _ = holster_request:req_timed(
         Pid,
         ReqType,
-        uri_string:recompose(URIMap),
+        prep_partial_uri(URIMap),
         Headers,
-        ConnectOpts,
+        ReqOpts,
         Timeout,
         Body
     ),
@@ -161,6 +288,15 @@ simple_proc_req_timed(ReqType, URI, ConnectOpts, Headers, Timeout, Body) ->
         A ->
             {response, A}
     end.
+
+%% This exists as gub open takes http://host:port.
+%% and subsequent requests only take the parts after host ( query string etc )
+%% EX: URL : "foo://user@example.com:8042/over/there?name=ferret#nose"
+%% gun open 
+prep_partial_uri(URIMap) ->
+    uri_string:recompose(
+        maps:without([host, scheme, userinfo, port], URIMap)
+    ).
 
 % -spec req(req_type(), uri_string:uri_string())
 %         -> {response, term()} | {'error','invalid_scheme'}.

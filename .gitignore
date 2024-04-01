@@ -12,3 +12,4 @@ _build/
 rebar.lock
 rebar3
 **/.DS_Store
+log/

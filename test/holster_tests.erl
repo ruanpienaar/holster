@@ -7,6 +7,35 @@
 
 ]).
 
+base64_encoded_user_info_header_field_test() ->
+    ?assertEqual(
+        [{<<"authorization">>, <<"Basic QWxsYWRpbjpvcGVuX3Nlc2FtZQ==">>}],
+        holster:base64_encoded_user_info_header_field("Alladin:open_sesame")
+    ),
+    ?assertEqual(
+        [{<<"authorization">>, <<"Basic QWxsYWRpbjpvcGVuX3Nlc2FtZQ==">>}],
+        holster:base64_encoded_user_info_header_field(<<"Alladin:open_sesame">>)
+    ),
+    ?assertEqual(
+        [],
+        holster:base64_encoded_user_info_header_field(#{})
+    ),
+    ?assertEqual(
+        [{<<"authorization">>, <<"Basic QWxsYWRpbjpvcGVuX3Nlc2FtZQ==">>}],
+        holster:base64_encoded_user_info_header_field(#{userinfo => "Alladin:open_sesame"})
+    ),
+    ?assertEqual(
+        [{<<"authorization">>, <<"Basic QWxsYWRpbjpvcGVuX3Nlc2FtZQ==">>}],
+        holster:base64_encoded_user_info_header_field(
+            element(
+                2,
+                holster:parse_uri(
+                    "http://Alladin:open_sesame@localhost:8000/auth-endpoint"
+                )
+            )
+        )
+    ).
+
 parse_uri_test() ->
     Url1 = <<"http://localhost">>,
     {ok, Parse1} = holster:parse_uri(Url1),
@@ -70,15 +99,13 @@ parse_uri_test() ->
         #{host => "mywebsockethost",path => [],port => 12345,scheme => "wss"},
         Parse9
     ),
-    ?assertEqual(Url9, list_to_binary(uri_string:recompose(Parse9))),
-    ok.
+    ?assertEqual(Url9, list_to_binary(uri_string:recompose(Parse9))).
 
-% Should be common test :()
-unit_test_() ->
+http_unit_test_() ->
     {
         setup,
         fun() ->
-            ets:new(test_table, [named_table, public, bag]),
+            _ = ets:new(test_table, [named_table, public, bag]),
             _ = error_logger:tty(false),
             AppsStruct1 = application:ensure_all_started(cowboy),
             ?assertEqual(
@@ -86,7 +113,6 @@ unit_test_() ->
                 AppsStruct1
             ),
             AppsStruct2 = application:ensure_all_started(holster),
-            ?debugFmt("AppsStruct2 ~p\n", [AppsStruct2]),
             ?assertEqual(
                 {ok,[gun,jsx,holster]},
                 AppsStruct2
@@ -96,22 +122,25 @@ unit_test_() ->
             _ = error_logger:tty(true),
             Dispatch = cowboy_router:compile([
                 {'_', [
+                    {"/auth-endpoint", holster_basic_auth_webserver, []},
                     {"/[...]", holster_webserver_h, []}
                 ]}
             ]),
             {ok, Pid} = cowboy:start_clear(
                 http,
-                [{port, 8080}],
-                #{
+                _TransOpts = [{port, 8080}],
+                _ProtoOpts=#{
                     env => #{dispatch => Dispatch}
                 }
             ),
-            ListenPortInfo = io_lib:format("~s",[os:cmd("netstat -an | grep LISTEN | grep 8080")]),
-            ?debugFmt("Listening port ~p\n", [ListenPortInfo]),
+            NetstatCmd = "netstat -an | grep LISTEN | grep 8080",
+            ListenPortInfo = io_lib:format("~s",[os:cmd(NetstatCmd)]),
+            ?debugFmt("CMD: ~p\n~s", [NetstatCmd, ListenPortInfo]),
             ?assert(
                 [[]]  =/= ListenPortInfo
             ),
-            ?debugFmt("~s", [io_lib:format("~s",[os:cmd("curl -vvv localhost:8080")])]),
+            CurlCmd = "curl -vvv localhost:8080",
+            ?debugFmt("CMD: ~p\n~s", [CurlCmd, io_lib:format("~s",[os:cmd(CurlCmd)])]),
             true = erlang:link(Pid),
             % {ok, _} = dbg:tracer(),
             % {ok, _} = dbg:p(all, call),
@@ -146,6 +175,7 @@ unit_test_() ->
                     ,{timeout, 5000, {"req", fun req/0}}
                     ,{timeout, 5000, {"stay_connected_req", fun stay_connected_req/0}}
                     ,{timeout, 5000, {"stay_connected_req_many_req", fun stay_connected_req_many_req/0}}
+                    ,{timeout, 5000, {"test user auth", fun simple_proc_req_user_auth/0}}
                 ]
             }
         ]
@@ -154,9 +184,9 @@ unit_test_() ->
 simple_proc_req() ->
     ?assertMatch(
         {response,{200,
-             [{<<"content-length">>,<<"11">>},
-              {<<"date">>,_},
-              {<<"server">>,<<"Cowboy">>}],
+             [{<<"content-length">>, <<"11">>},
+              {<<"date">>, _},
+              {<<"server">>, <<"Cowboy">>}],
              <<"dummy reply">>}},
         holster:simple_proc_req(get, <<"http://localhost:8080/insert?table=test_table&entry=somevalue">>)
     ),
@@ -166,9 +196,9 @@ simple_proc_req() ->
     ),
     ?assertMatch(
         {response,{200,
-             [{<<"content-length">>,<<"11">>},
-              {<<"date">>,_},
-              {<<"server">>,<<"Cowboy">>}],
+             [{<<"content-length">>, <<"11">>},
+              {<<"date">>, _},
+              {<<"server">>, <<"Cowboy">>}],
              <<"dummy reply">>}},
         holster:simple_proc_req(get, "http://localhost:8080/insert?table=test_table&entry=somevalue2")
     ),
@@ -180,9 +210,9 @@ simple_proc_req() ->
 req() ->
     ?assertMatch(
         {response,{200,
-             [{<<"content-length">>,<<"11">>},
-              {<<"date">>,_},
-              {<<"server">>,<<"Cowboy">>}],
+             [{<<"content-length">>, <<"11">>},
+              {<<"date">>, _},
+              {<<"server">>, <<"Cowboy">>}],
              <<"dummy reply">>}},
         holster:req(get, <<"http://localhost:8080/insert?table=test_table&entry=somevalue3">>)
     ),
@@ -192,14 +222,14 @@ req() ->
     ),
     ?assertMatch(
         {response,{200,
-             [{<<"content-length">>,<<"11">>},
-              {<<"date">>,_},
-              {<<"server">>,<<"Cowboy">>}],
+             [{<<"content-length">>, <<"11">>},
+              {<<"date">>, _},
+              {<<"server">>, <<"Cowboy">>}],
              <<"dummy reply">>}},
         holster:req(get, "http://localhost:8080/insert?table=test_table&entry=somevalue4")
     ),
     ?assertEqual(
-        [{<<"somevalue3">>},{<<"somevalue4">>}],
+        [{<<"somevalue3">>}, {<<"somevalue4">>}],
         ets:tab2list(test_table)
     ).
 
@@ -207,9 +237,9 @@ stay_connected_req() ->
     {{ok, Pid}, Response} = holster:stay_connected_req(get, "http://localhost:8080/insert?table=test_table&entry=somevalue5"),
     ?assertMatch(
         {response,{200,
-             [{<<"content-length">>,<<"11">>},
-              {<<"date">>,_},
-              {<<"server">>,<<"Cowboy">>}],
+             [{<<"content-length">>, <<"11">>},
+              {<<"date">>, _},
+              {<<"server">>, <<"Cowboy">>}],
              <<"dummy reply">>}},
         Response
     ),
@@ -220,22 +250,22 @@ stay_connected_req() ->
     {{ok, Pid}, Response} = holster:another_request(get, "http://localhost:8080/insert?table=test_table&entry=somevalue6", Pid),
     ?assertMatch(
         {response,{200,
-             [{<<"content-length">>,<<"11">>},
-              {<<"date">>,_},
-              {<<"server">>,<<"Cowboy">>}],
+             [{<<"content-length">>, <<"11">>},
+              {<<"date">>, _},
+              {<<"server">>, <<"Cowboy">>}],
              <<"dummy reply">>}},
         Response
     ),
     ?assertEqual(
-        [{<<"somevalue6">>},{<<"somevalue5">>}],
+        [{<<"somevalue6">>}, {<<"somevalue5">>}],
         ets:tab2list(test_table)
     ),
     {{ok, Pid}, Response} = holster:another_request(get, "http://localhost:8080/insert?table=test_table&entry=somevalue7", Pid),
     ?assertMatch(
         {response,{200,
-             [{<<"content-length">>,<<"11">>},
-              {<<"date">>,_},
-              {<<"server">>,<<"Cowboy">>}],
+             [{<<"content-length">>, <<"11">>},
+              {<<"date">>, _},
+              {<<"server">>, <<"Cowboy">>}],
              <<"dummy reply">>}},
         Response
     ),
@@ -245,20 +275,28 @@ stay_connected_req() ->
     ).
 
 stay_connected_req_many_req() ->
-    {{ok, Pid}, Response} = holster:stay_connected_req(get, "http://localhost:8080/insert?table=test_table&entry=1"),
+    {{ok, Pid}, Response} = holster:stay_connected_req(
+        get,
+        "http://localhost:8080/insert?table=test_table&entry=1"
+    ),
     ?assertMatch(
         {response,{200,
-             [{<<"content-length">>,<<"11">>},
-              {<<"date">>,_},
-              {<<"server">>,<<"Cowboy">>}],
+             [{<<"content-length">>, <<"11">>},
+              {<<"date">>, _},
+              {<<"server">>, <<"Cowboy">>}],
              <<"dummy reply">>}},
         Response
     ),
     ?debugFmt("Pid ~p\n", [Pid]),
     lists:foreach(
         fun(X) ->
-            XXX = holster:another_request(get, "http://localhost:8080/insert?table=test_table&entry="++integer_to_list(X), Pid),
-            {{ok, Pid}, Response2} = XXX,
+            %% Check response PID matches
+            {{ok, Pid}, Response2} = 
+                holster:another_request(
+                    get,
+                    "http://localhost:8080/insert?table=test_table&entry="++integer_to_list(X),
+                    Pid
+                ),
             {response, {HttpResponseCode, Proplist, Reply}} = Response2,
             ?assertMatch(
                 {
@@ -267,6 +305,7 @@ stay_connected_req_many_req() ->
                         response,
                         {
                             200,
+                            %% Map here, to allow for selective matching ( Proplist does not allow selective matching )
                             #{
                                 <<"content-length">> := <<"11">>,
                                 <<"date">> := _,
@@ -276,16 +315,14 @@ stay_connected_req_many_req() ->
                         }
                     }
                 },
-                {
-                    {ok, Pid},
-                    {response, {HttpResponseCode, maps:from_list(Proplist), Reply}}
-                }
+                %% Turning headers into map, to deal with server closed: {<<"connection">>,<<"close">>}. 
+                %% happens at times.
+                {{ok, Pid}, {response, {HttpResponseCode, maps:from_list(Proplist), Reply}}}
             )
         end,
         lists:seq(1, 1000)
     ),
     All = lists:sort(ets:tab2list(test_table)),
-    % ?debugFmt("All ~p\n", [All]),
     ?assertEqual(
         1000,
         length(All)
@@ -299,4 +336,156 @@ stay_connected_req_many_req() ->
             {<<"750">>},{<<"751">>},{<<"752">>},{<<"753">>},{<<"754">>},{<<"755">>},{<<"756">>},{<<"757">>},{<<"758">>},{<<"759">>},{<<"76">>},{<<"760">>},{<<"761">>},{<<"762">>},{<<"763">>},{<<"764">>},{<<"765">>},{<<"766">>},{<<"767">>},{<<"768">>},{<<"769">>},{<<"77">>},{<<"770">>},{<<"771">>},{<<"772">>},{<<"773">>},{<<"774">>},{<<"775">>},{<<"776">>},{<<"777">>},{<<"778">>},{<<"779">>},{<<"78">>},{<<"780">>},{<<"781">>},{<<"782">>},{<<"783">>},{<<"784">>},{<<"785">>},{<<"786">>},{<<"787">>},{<<"788">>},{<<"789">>},{<<"79">>},{<<"790">>},{<<"791">>},{<<"792">>},{<<"793">>},{<<"794">>},{<<"795">>},{<<"796">>},{<<"797">>},{<<"798">>},{<<"799">>},{<<"8">>},{<<"80">>},{<<"800">>},{<<"801">>},{<<"802">>},{<<"803">>},{<<"804">>},{<<"805">>},{<<"806">>},{<<"807">>},{<<"808">>},{<<"809">>},{<<"81">>},{<<"810">>},{<<"811">>},{<<"812">>},{<<"813">>},{<<"814">>},{<<"815">>},{<<"816">>},{<<"817">>},{<<"818">>},{<<"819">>},{<<"82">>},{<<"820">>},{<<"821">>},{<<"822">>},{<<"823">>},{<<"824">>},{<<"825">>},{<<"826">>},{<<"827">>},{<<"828">>},{<<"829">>},{<<"83">>},{<<"830">>},{<<"831">>},{<<"832">>},{<<"833">>},{<<"834">>},{<<"835">>},{<<"836">>},{<<"837">>},{<<"838">>},{<<"839">>},{<<"84">>},{<<"840">>},{<<"841">>},{<<"842">>},{<<"843">>},{<<"844">>},{<<"845">>},{<<"846">>},{<<"847">>},{<<"848">>},{<<"849">>},{<<"85">>},{<<"850">>},{<<"851">>},{<<"852">>},{<<"853">>},{<<"854">>},{<<"855">>},{<<"856">>},{<<"857">>},{<<"858">>},{<<"859">>},{<<"86">>},{<<"860">>},{<<"861">>},{<<"862">>},{<<"863">>},{<<"864">>},{<<"865">>},{<<"866">>},{<<"867">>},{<<"868">>},{<<"869">>},{<<"87">>},{<<"870">>},{<<"871">>},{<<"872">>},{<<"873">>},{<<"874">>},{<<"875">>},{<<"876">>},{<<"877">>},{<<"878">>},{<<"879">>},{<<"88">>},{<<"880">>},{<<"881">>},{<<"882">>},{<<"883">>},{<<"884">>},{<<"885">>},{<<"886">>},{<<"887">>},{<<"888">>},{<<"889">>},{<<"89">>},{<<"890">>},{<<"891">>},{<<"892">>},{<<"893">>},{<<"894">>},{<<"895">>},{<<"896">>},{<<"897">>},{<<"898">>},{<<"899">>},{<<"9">>},{<<"90">>},{<<"900">>},{<<"901">>},{<<"902">>},{<<"903">>},{<<"904">>},{<<"905">>},{<<"906">>},{<<"907">>},{<<"908">>},{<<"909">>},{<<"91">>},{<<"910">>},{<<"911">>},{<<"912">>},{<<"913">>},{<<"914">>},{<<"915">>},{<<"916">>},{<<"917">>},{<<"918">>},{<<"919">>},{<<"92">>},{<<"920">>},{<<"921">>},{<<"922">>},{<<"923">>},{<<"924">>},{<<"925">>},{<<"926">>},{<<"927">>},{<<"928">>},{<<"929">>},{<<"93">>},{<<"930">>},{<<"931">>},{<<"932">>},{<<"933">>},{<<"934">>},{<<"935">>},{<<"936">>},{<<"937">>},{<<"938">>},{<<"939">>},{<<"94">>},{<<"940">>},{<<"941">>},{<<"942">>},{<<"943">>},{<<"944">>},{<<"945">>},{<<"946">>},{<<"947">>},{<<"948">>},{<<"949">>},{<<"95">>},{<<"950">>},{<<"951">>},{<<"952">>},{<<"953">>},{<<"954">>},{<<"955">>},{<<"956">>},{<<"957">>},{<<"958">>},{<<"959">>},{<<"96">>},{<<"960">>},{<<"961">>},{<<"962">>},{<<"963">>},{<<"964">>},{<<"965">>},{<<"966">>},{<<"967">>},{<<"968">>},{<<"969">>},{<<"97">>},{<<"970">>},{<<"971">>},{<<"972">>},{<<"973">>},{<<"974">>},{<<"975">>},{<<"976">>},{<<"977">>},{<<"978">>},{<<"979">>},{<<"98">>},{<<"980">>},{<<"981">>},{<<"982">>},{<<"983">>},{<<"984">>},{<<"985">>},{<<"986">>},{<<"987">>},{<<"988">>},{<<"989">>},{<<"99">>},{<<"990">>},{<<"991">>},{<<"992">>},{<<"993">>},{<<"994">>},{<<"995">>},{<<"996">>},{<<"997">>},{<<"998">>},{<<"999">>}
         ],
         All
+    ).
+
+simple_proc_req_user_auth() ->
+    %% Invalid userinfo ( username only )
+    ?assertEqual(
+        {
+            response,
+            {
+                400,
+                [
+                    {<<"content-length">>, <<"0">>}
+                ],
+                <<>>
+            }
+        },
+        holster:basic_auth_request(
+            _ReqType = get,
+            _URI = <<"http://dummy@localhost:8080/auth-endpoint">>,
+            _ConnectOpts = #{},
+            _ReqOpts = #{},
+            _Headers=[], %% TODO Add existing header
+            5000
+        )
+    ),
+    CC = holster:basic_auth_request(
+            _ReqType = get,
+            _URI = <<"http://dummy:passwd@localhost:8080/auth-endpoint">>,
+            _ConnectOpts = #{},
+            _ReqOpts = #{},
+            _Headers=[], %% TODO Add existing header
+            5000
+        ),
+    ?debugFmt("~p", [CC]),
+    ?assertMatch(
+        {
+                response,
+                {
+                    401,
+                    [{<<"content-length">>, <<"0">>},
+                     {<<"date">>, _},
+                     {<<"server">>, <<"Cowboy">>},
+                     {<<"www-authenticate">>, <<"Basic realm=\"cowboy\"">>}],
+                    <<>>
+                }
+            },
+        CC
+    ).
+
+https_unit_test_() ->
+    {
+        setup,
+        fun() ->
+            _ = error_logger:tty(false),
+            AppsStruct1 = application:ensure_all_started(cowboy),
+            ?assertEqual(
+                {ok,[cowlib,ranch,cowboy]},
+                AppsStruct1
+            ),
+            % AppsStruct2 = application:ensure_all_started(ssl),
+            % ?assertEqual(
+            %     aaa,
+            %     AppsStruct2
+            % ),
+
+            ?assert(
+                is_list(ssl:cipher_suites(all,'tlsv1.3'))
+            ),
+
+            AppsStruct3 = application:ensure_all_started(holster),
+            ?assertEqual(
+                {ok,[gun,jsx,holster]},
+                AppsStruct3
+            ),
+            _ = error_logger:tty(true),
+            {ok, Apps} = AppsStruct1,
+            {ok, Apps3} = AppsStruct3,
+            Dispatch = cowboy_router:compile([
+                {'_', [
+                    {"/api", holster_ssl_webserver_h, []}
+                ]}
+            ]),
+            % ?debugFmt("~p\n", [file:read_file("test/ssl/cert.pem")]),
+            % ?debugFmt("~p\n", [file:read_file("test/ssl/key.pem")]),
+            {ok, Pid} = cowboy:start_tls(
+                https,
+                _TransOpts=[
+                    {port, 8443},
+                    {certfile, "test/ssl/cert.pem"},
+                    {keyfile, "test/ssl/key.pem"}
+                ],
+                _ProtoOpts=#{
+                    env => #{dispatch => Dispatch}
+                }
+            ),
+            NetstatCmd = "netstat -an | grep LISTEN | grep 8443",
+            ListenPortInfo = io_lib:format("~s",[os:cmd(NetstatCmd)]),
+            ?debugFmt("CMD: ~p\n~s", [NetstatCmd, ListenPortInfo]),
+            ?assert(
+                [[]]  =/= ListenPortInfo
+            ),
+            % {ok, _} = dbg:tracer(),
+            % {ok, _} = dbg:p(all, call),
+            % {ok, _} = dbg:tpl(tls_record, validate_tls_records_type, cx),
+            % {ok, _} = dbg:tpl(tls_record, decode_tls_records, cx),
+            % {ok, _} = dbg:tpl(gun, open, cx),
+            % {ok, _} = dbg:tpl(gun, await_up, cx),
+            % {ok, _} = dbg:tpl(gun, get, cx),
+            % {ok, _} = dbg:tpl(holster, cx),
+            % {ok, _} = dbg:tpl(holster_request, cx),
+            % {ok, _} = dbg:tpl(holster_ssl_webserver_h, cx),
+            CurlCmd = "curl -XGET -vvv --insecure https://localhost:8443/api",
+            ?debugFmt("CMD: ~p\n~s", [CurlCmd, io_lib:format("~s",[os:cmd(CurlCmd)])]),
+            true = erlang:link(Pid),
+            {{ok, Pid}, {ok, Apps ++ Apps3}}
+        end,
+        fun({{ok, Pid}, {ok, Apps}}) ->
+            true = erlang:unlink(Pid),
+            true = erlang:exit(Pid, shutdown),
+            _ = error_logger:tty(false),
+            [ ok = application:stop(App) || App <- Apps ],
+            _ = error_logger:tty(true),
+            ok = dbg:stop_clear(),
+            ?assertEqual(
+                ?MECK_MODS,
+                lists:sort(meck:unload())
+            )
+        end,
+        [
+            {"simple_proc_req/3 test ", fun https_simple_proc_req_3/0}
+        ]
+    }.
+
+https_simple_proc_req_3() ->
+    ?assertMatch(
+        {response, {
+            200,
+            [
+                {<<"content-length">>, <<"12">>},
+                {<<"content-type">>, <<"text/plain">>},
+                {<<"date">>, _},
+                {<<"server">>, <<"Cowboy">>}
+            ],
+            <<"Hello world!">>
+        }},
+        holster:simple_proc_req(
+            get,
+            "https://localhost:8443/api",
+            #{
+                tls_opts => [{verify, verify_none}],
+                transport => tls
+            }
+        )
     ).
